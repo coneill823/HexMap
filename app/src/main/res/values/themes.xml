@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.TaskTracker" parent="android:Theme.Material.Light.NoTitleBar" />
+    <style name="Theme.TaskTracker" parent="Theme.Material3.DayNight.NoActionBar" />
 </resources>
