@@ -56,6 +56,8 @@ class TasksViewModel(
     private val _editingTask = MutableStateFlow<TaskWithTags?>(null)
     private val _editingRoutineItem = MutableStateFlow<RoutineItem?>(null)
     private val _sessionState = MutableStateFlow<SessionState?>(null)
+    private val _editingRoutineId = MutableStateFlow<Long?>(null)
+    val editingRoutineId: StateFlow<Long?> = _editingRoutineId.asStateFlow()
 
     private var timerJob: Job? = null
 
@@ -78,7 +80,7 @@ class TasksViewModel(
             val routinesWithProgress = routineList.map { rwi ->
                 RoutineWithProgress(
                     routine = rwi.routine,
-                    items = rwi.items.map { item ->
+                    items = rwi.items.sortedBy { it.orderIndex }.map { item ->
                         RoutineItemWithCompletion(
                             item = item,
                             isCompleted = completions.any {
@@ -149,6 +151,12 @@ class TasksViewModel(
     fun deleteRoutineItem(item: RoutineItem) {
         viewModelScope.launch { routineRepo.deleteRoutineItem(item) }
     }
+
+    fun selectRoutineToEdit(routineId: Long) {
+        _editingRoutineId.value = routineId
+    }
+
+    fun clearRoutineToEdit() { _editingRoutineId.value = null }
 
     fun deleteRoutine(routine: com.tasktracker.data.database.entities.Routine) {
         viewModelScope.launch { routineRepo.deleteRoutine(routine) }

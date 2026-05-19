@@ -17,6 +17,12 @@ class RoutineRepository(private val routineDao: RoutineDao) {
     fun getCompletedCountsByDateRange(startDate: Long, endDate: Long) =
         routineDao.getCompletedCountsByDateRange(startDate, endDate)
 
+    fun getCompletedCountsByDateRangeAndRoutine(routineId: Long, startDate: Long, endDate: Long) =
+        routineDao.getCompletedCountsByDateRangeAndRoutine(routineId, startDate, endDate)
+
+    suspend fun getItemCountForRoutine(routineId: Long): Int =
+        routineDao.getItemCountForRoutine(routineId)
+
     suspend fun getTotalItemCount(): Int = routineDao.getTotalItemCount()
 
     suspend fun saveRoutine(routine: Routine): Long =

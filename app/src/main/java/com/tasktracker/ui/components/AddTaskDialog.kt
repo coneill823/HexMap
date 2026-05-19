@@ -21,8 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.tasktracker.work.ReminderScheduler
 import com.tasktracker.data.database.entities.RecurrenceRule
 import com.tasktracker.data.database.entities.Tag
 import com.tasktracker.data.database.entities.Task
@@ -49,7 +49,8 @@ fun AddTaskDialog(
     var showTimePicker by remember { mutableStateOf(false) }
     var dueDateEpochDay by remember { mutableStateOf(editingTask?.task?.dueDate) }
     var showDatePicker by remember { mutableStateOf(false) }
-    var reminderDaysBefore by remember { mutableStateOf(editingTask?.task?.reminderDaysBefore?.toString() ?: "") }
+    var selectedReminderMinutes by remember { mutableStateOf(editingTask?.task?.reminderDaysBefore) }
+    var showReminderDropdown by remember { mutableStateOf(false) }
     var recurrenceDraft by remember { mutableStateOf(RecurrenceDraft()) }
 
     val titleError = title.isBlank()
@@ -113,17 +114,40 @@ fun AddTaskDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        TextButton(onClick = { dueDateEpochDay = null; reminderDaysBefore = "" }) { Text("Clear due date") }
-                        Spacer(Modifier.weight(1f))
-                        Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedTextField(
-                            value = reminderDaysBefore,
-                            onValueChange = { v -> if (v.all { it.isDigit() } && v.length <= 3) reminderDaysBefore = v },
-                            label = { Text("Days before") },
-                            modifier = Modifier.width(110.dp),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
+                        TextButton(onClick = { dueDateEpochDay = null; selectedReminderMinutes = null }) { Text("Clear due date") }
+                    }
+                    // Reminder dropdown
+                    Box {
+                        OutlinedButton(
+                            onClick = { showReminderDropdown = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                selectedReminderMinutes?.let { m ->
+                                    ReminderScheduler.REMINDER_OPTIONS.find { it.first == m }?.second ?: "Custom"
+                                } ?: "Set Reminder (optional)"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showReminderDropdown,
+                            onDismissRequest = { showReminderDropdown = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("No reminder") },
+                                onClick = { selectedReminderMinutes = null; showReminderDropdown = false }
+                            )
+                            ReminderScheduler.REMINDER_OPTIONS.forEach { (minutes, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = { selectedReminderMinutes = minutes; showReminderDropdown = false },
+                                    trailingIcon = if (selectedReminderMinutes == minutes) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                    } else null
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -179,7 +203,7 @@ fun AddTaskDialog(
                             isCompleted = editingTask?.task?.isCompleted ?: false,
                             createdAt = editingTask?.task?.createdAt ?: System.currentTimeMillis(),
                             dueDate = dueDateEpochDay,
-                            reminderDaysBefore = reminderDaysBefore.toIntOrNull(),
+                            reminderDaysBefore = selectedReminderMinutes,
                             reminderWorkerId = editingTask?.task?.reminderWorkerId
                         )
                         onConfirm(task, selectedTagIds.toList(), recurrenceDraft)

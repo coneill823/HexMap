@@ -71,7 +71,7 @@ class CalendarViewModel(
             val routinesWithProgress = routines.map { rwi ->
                 RoutineWithProgress(
                     routine = rwi.routine,
-                    items = rwi.items.map { item ->
+                    items = rwi.items.sortedBy { it.orderIndex }.map { item ->
                         RoutineItemWithCompletion(
                             item = item,
                             isCompleted = completions.any {

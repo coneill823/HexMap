@@ -41,6 +41,22 @@ interface RoutineDao {
         endDate: Long
     ): Flow<List<DateCompletedCount>>
 
+    @Query("""
+        SELECT dateEpochDay, COUNT(*) as completed
+        FROM daily_routine_completions
+        WHERE isCompleted = 1 AND routineId = :routineId
+          AND dateEpochDay >= :startDate AND dateEpochDay <= :endDate
+        GROUP BY dateEpochDay
+    """)
+    fun getCompletedCountsByDateRangeAndRoutine(
+        routineId: Long,
+        startDate: Long,
+        endDate: Long
+    ): Flow<List<DateCompletedCount>>
+
+    @Query("SELECT COUNT(*) FROM routine_items WHERE routineId = :routineId")
+    suspend fun getItemCountForRoutine(routineId: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRoutine(routine: Routine): Long
 

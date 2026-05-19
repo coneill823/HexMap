@@ -4,8 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
@@ -64,7 +67,7 @@ fun YearViewScreen(viewModel: YearViewViewModel) {
                 contentPadding = PaddingValues(bottom = 32.dp)
             ) {
                 item {
-                    // Period header with completion stat
+                    // Period header with completion stat and date range
                     PeriodHeader(
                         state = state,
                         today = today,
@@ -83,6 +86,30 @@ fun YearViewScreen(viewModel: YearViewViewModel) {
                             }
                         }
                     )
+                }
+
+                // Routine filter chips
+                if (state.allRoutines.isNotEmpty()) {
+                    item {
+                        FilterChipRow(
+                            label = "Routine",
+                            allItems = state.allRoutines.map { it.id to it.name },
+                            selectedId = state.selectedRoutineId,
+                            onSelect = { viewModel.selectRoutine(it) }
+                        )
+                    }
+                }
+
+                // Tag filter chips
+                if (state.allTags.isNotEmpty()) {
+                    item {
+                        FilterChipRow(
+                            label = "Tag",
+                            allItems = state.allTags.map { it.id to it.name },
+                            selectedId = state.selectedTagId,
+                            onSelect = { viewModel.selectTag(it) }
+                        )
+                    }
                 }
 
                 item {
@@ -195,6 +222,71 @@ private fun PeriodHeader(
                         else -> MaterialTheme.colorScheme.primary
                     },
                     trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                )
+                Spacer(Modifier.height(6.dp))
+                val dateRangeText = when (state.granularity) {
+                    OverviewGranularity.YEAR -> {
+                        val fmt = DateTimeFormatter.ofPattern("MMM d")
+                        val start = LocalDate.of(state.year, 1, 1)
+                        val end = LocalDate.of(state.year, 12, 31)
+                        "${start.format(fmt)} – ${end.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))}"
+                    }
+                    OverviewGranularity.MONTH -> {
+                        val fmt = DateTimeFormatter.ofPattern("MMM d")
+                        val start = state.month.atDay(1)
+                        val end = state.month.atEndOfMonth()
+                        "${start.format(fmt)} – ${end.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))}"
+                    }
+                    OverviewGranularity.WEEK -> {
+                        val fmt = DateTimeFormatter.ofPattern("MMM d")
+                        val end = state.weekStart.plusDays(6)
+                        "${state.weekStart.format(fmt)} – ${end.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))}"
+                    }
+                }
+                Text(
+                    dateRangeText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChipRow(
+    label: String,
+    allItems: List<Pair<Long, String>>,
+    selectedId: Long?,
+    onSelect: (Long?) -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                FilterChip(
+                    selected = selectedId == null,
+                    onClick = { onSelect(null) },
+                    label = { Text("All") },
+                    leadingIcon = if (selectedId == null) {
+                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                    } else null
+                )
+            }
+            items(allItems) { (id, name) ->
+                val selected = selectedId == id
+                FilterChip(
+                    selected = selected,
+                    onClick = { onSelect(if (selected) null else id) },
+                    label = { Text(name) },
+                    leadingIcon = if (selected) {
+                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                    } else null
                 )
             }
         }

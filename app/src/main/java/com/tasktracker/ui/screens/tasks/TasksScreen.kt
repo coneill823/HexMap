@@ -1,11 +1,11 @@
 package com.tasktracker.ui.screens.tasks
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,33 +15,50 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tasktracker.data.database.entities.RoutineItem
+import com.tasktracker.data.models.RoutineItemWithCompletion
 import com.tasktracker.data.models.RoutineWithProgress
 import com.tasktracker.data.models.TaskWithTags
 import com.tasktracker.ui.components.AddTaskDialog
 import com.tasktracker.ui.components.EditRoutineItemDialog
 import com.tasktracker.ui.components.ManageTagsDialog
-import com.tasktracker.ui.components.RecurrenceDraft
 import com.tasktracker.ui.components.SessionOverlayDialog
 import com.tasktracker.ui.components.formatTime
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksScreen(viewModel: TasksViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val editingRoutineId by viewModel.editingRoutineId.collectAsStateWithLifecycle()
     var selectedTabIndex by remember { mutableStateOf(0) }
+
+    // Auto-switch to Routines tab when editingRoutineId becomes non-null
+    LaunchedEffect(editingRoutineId) {
+        if (editingRoutineId != null) {
+            selectedTabIndex = 1
+            viewModel.clearRoutineToEdit()
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Tasks & Routines") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
                 actions = {
                     if (selectedTabIndex == 0) {
                         IconButton(onClick = { viewModel.showManageTagsDialog() }) {
@@ -69,13 +86,25 @@ fun TasksScreen(viewModel: TasksViewModel) {
                     selected = selectedTabIndex == 0,
                     onClick = { selectedTabIndex = 0 },
                     text = { Text("Tasks") },
-                    icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    icon = {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 )
                 Tab(
                     selected = selectedTabIndex == 1,
                     onClick = { selectedTabIndex = 1 },
                     text = { Text("Routines") },
-                    icon = { Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    icon = {
+                        Icon(
+                            Icons.Default.Repeat,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 )
             }
 
@@ -90,7 +119,9 @@ fun TasksScreen(viewModel: TasksViewModel) {
                 1 -> RoutinesTab(
                     routines = state.routines,
                     onStartSession = viewModel::startSession,
-                    onToggleItem = { routineId, itemId, completed -> viewModel.toggleRoutineItemComplete(routineId, itemId, completed) },
+                    onToggleItem = { routineId, itemId, completed ->
+                        viewModel.toggleRoutineItemComplete(routineId, itemId, completed)
+                    },
                     onEditItem = viewModel::showEditRoutineItemDialog,
                     onDeleteItem = viewModel::deleteRoutineItem,
                     onDeleteRoutine = { viewModel.deleteRoutine(it.routine) },
@@ -147,6 +178,10 @@ fun TasksScreen(viewModel: TasksViewModel) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tasks tab
+// ---------------------------------------------------------------------------
+
 @Composable
 private fun TasksTab(
     state: TasksUiState,
@@ -168,7 +203,13 @@ private fun TasksTab(
                     onClick = { onSelectTag(null) },
                     label = { Text("All") },
                     leadingIcon = if (state.selectedTagId == null) {
-                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     } else null
                 )
             }
@@ -187,8 +228,12 @@ private fun TasksTab(
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(android.graphics.Color.parseColor(tag.colorHex)).copy(alpha = 0.2f),
-                        selectedLabelColor = Color(android.graphics.Color.parseColor(tag.colorHex))
+                        selectedContainerColor = Color(
+                            android.graphics.Color.parseColor(tag.colorHex)
+                        ).copy(alpha = 0.2f),
+                        selectedLabelColor = Color(
+                            android.graphics.Color.parseColor(tag.colorHex)
+                        )
                     )
                 )
             }
@@ -216,6 +261,10 @@ private fun TasksTab(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Routines tab
+// ---------------------------------------------------------------------------
 
 @Composable
 private fun RoutinesTab(
@@ -265,16 +314,23 @@ private fun RoutinesTab(
             RoutineManagementCard(
                 routine = routine,
                 onStartSession = { onStartSession(routine) },
-                onToggleItem = { itemId, completed -> onToggleItem(routine.routine.id, itemId, completed) },
+                onToggleItem = { itemId, completed ->
+                    onToggleItem(routine.routine.id, itemId, completed)
+                },
                 onEditItem = onEditItem,
                 onDeleteItem = onDeleteItem,
                 onDeleteRoutine = { onDeleteRoutine(routine) },
-                onMoveItemUp = { index -> if (index > 0) onReorderItem(routine.routine.id, index, index - 1) },
-                onMoveItemDown = { index -> if (index < routine.items.size - 1) onReorderItem(routine.routine.id, index, index + 1) }
+                onReorderItem = { fromIndex, toIndex ->
+                    onReorderItem(routine.routine.id, fromIndex, toIndex)
+                }
             )
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Routine card with drag-to-reorder items
+// ---------------------------------------------------------------------------
 
 @Composable
 private fun RoutineManagementCard(
@@ -284,23 +340,44 @@ private fun RoutineManagementCard(
     onEditItem: (RoutineItem) -> Unit,
     onDeleteItem: (RoutineItem) -> Unit,
     onDeleteRoutine: () -> Unit,
-    onMoveItemUp: (Int) -> Unit,
-    onMoveItemDown: (Int) -> Unit
+    onReorderItem: (fromIndex: Int, toIndex: Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(true) }
+    val items = routine.items
+
+    // Drag-to-reorder state
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    var dragOffsetX by remember { mutableStateOf(0f) }
+
+    val density = LocalDensity.current
+    val itemHeightPx = with(density) { 52.dp.toPx() }
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Header
+            // ---- Header ----
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(routine.routine.name, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        routine.routine.name,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    // Scheduled time badge
+                    routine.routine.timeMinutes?.let { minutes ->
+                        Text(
+                            formatTime(minutes),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     if (routine.routine.description.isNotBlank()) {
                         Text(
                             routine.routine.description,
@@ -318,7 +395,10 @@ private fun RoutineManagementCard(
                         ) {
                             LinearProgressIndicator(
                                 progress = { routine.progress },
-                                modifier = Modifier.width(80.dp).height(4.dp).clip(RoundedCornerShape(2.dp))
+                                modifier = Modifier
+                                    .width(80.dp)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
                             )
                             Text(
                                 "${routine.completedCount}/${routine.totalCount}",
@@ -328,6 +408,8 @@ private fun RoutineManagementCard(
                         }
                     }
                 }
+
+                // Start session button (Play icon)
                 IconButton(onClick = onStartSession, modifier = Modifier.size(36.dp)) {
                     Icon(
                         Icons.Default.PlayArrow,
@@ -335,13 +417,20 @@ private fun RoutineManagementCard(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
-                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
+
+                // Expand / collapse button
+                IconButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
                         modifier = Modifier.size(20.dp)
                     )
                 }
+
+                // Delete routine button
                 IconButton(onClick = onDeleteRoutine, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Default.Delete,
@@ -352,84 +441,192 @@ private fun RoutineManagementCard(
                 }
             }
 
+            // ---- Items with drag-to-reorder ----
             if (expanded) {
                 Spacer(Modifier.height(8.dp))
-                routine.items.forEachIndexed { index, itemWithCompletion ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Reorder buttons
-                        Column(modifier = Modifier.width(20.dp)) {
-                            IconButton(
-                                onClick = { onMoveItemUp(index) },
-                                enabled = index > 0,
-                                modifier = Modifier.size(20.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.KeyboardArrowUp,
-                                    contentDescription = "Move up",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = if (index > 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                                )
-                            }
-                            IconButton(
-                                onClick = { onMoveItemDown(index) },
-                                enabled = index < routine.items.size - 1,
-                                modifier = Modifier.size(20.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Move down",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = if (index < routine.items.size - 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-                                )
-                            }
-                        }
 
-                        Checkbox(
-                            checked = itemWithCompletion.isCompleted,
-                            onCheckedChange = { onToggleItem(itemWithCompletion.item.id, itemWithCompletion.isCompleted) },
-                            modifier = Modifier.size(32.dp),
-                            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.secondary)
-                        )
-
-                        Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                            Text(
-                                itemWithCompletion.item.title,
-                                style = MaterialTheme.typography.bodySmall,
-                                textDecoration = if (itemWithCompletion.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                color = if (itemWithCompletion.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-                            )
-                            if (itemWithCompletion.item.timeMinutes != null) {
-                                Text(
-                                    formatTime(itemWithCompletion.item.timeMinutes),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        IconButton(onClick = { onEditItem(itemWithCompletion.item) }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                        }
-                        IconButton(onClick = { onDeleteItem(itemWithCompletion.item) }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                        }
-                    }
-                }
-                if (routine.items.isEmpty()) {
+                if (items.isEmpty()) {
                     Text(
                         "No tasks in this routine",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
+                } else {
+                    // Precompute drag target index for slide offsets
+                    val dragging = draggingIndex ?: -1
+                    val targetIdx = if (dragging >= 0) {
+                        (dragging + (dragOffsetY / itemHeightPx).roundToInt())
+                            .coerceIn(0, items.size - 1)
+                    } else {
+                        -1
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Column {
+                            items.forEachIndexed { index, itemWithCompletion ->
+                                val isDragging = draggingIndex == index
+
+                                val slideOffset = when {
+                                    dragging < 0 || index == dragging -> 0f
+                                    dragging < index && index <= targetIdx -> -itemHeightPx
+                                    dragging > index && index >= targetIdx -> itemHeightPx
+                                    else -> 0f
+                                }
+
+                                RoutineItemRow(
+                                    itemWithCompletion = itemWithCompletion,
+                                    isDragging = isDragging,
+                                    dragOffsetY = if (isDragging) dragOffsetY else 0f,
+                                    slideOffset = slideOffset,
+                                    onToggle = {
+                                        onToggleItem(
+                                            itemWithCompletion.item.id,
+                                            itemWithCompletion.isCompleted
+                                        )
+                                    },
+                                    onEdit = { onEditItem(itemWithCompletion.item) },
+                                    onDelete = { onDeleteItem(itemWithCompletion.item) },
+                                    dragModifier = Modifier.pointerInput(itemWithCompletion.item.id) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                draggingIndex = index
+                                                dragOffsetY = 0f
+                                                dragOffsetX = 0f
+                                            },
+                                            onDrag = { _, amount ->
+                                                dragOffsetY += amount.y
+                                                dragOffsetX += amount.x
+                                            },
+                                            onDragEnd = {
+                                                val xThresh = 100.dp.toPx()
+                                                if (abs(dragOffsetX) > xThresh) {
+                                                    onDeleteItem(itemWithCompletion.item)
+                                                } else {
+                                                    val newIdx = (index + (dragOffsetY / itemHeightPx)
+                                                        .roundToInt())
+                                                        .coerceIn(items.indices)
+                                                    if (newIdx != index) {
+                                                        onReorderItem(index, newIdx)
+                                                    }
+                                                }
+                                                draggingIndex = null
+                                                dragOffsetY = 0f
+                                                dragOffsetX = 0f
+                                            },
+                                            onDragCancel = {
+                                                draggingIndex = null
+                                                dragOffsetY = 0f
+                                                dragOffsetX = 0f
+                                            }
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun RoutineItemRow(
+    itemWithCompletion: RoutineItemWithCompletion,
+    isDragging: Boolean,
+    dragOffsetY: Float,
+    slideOffset: Float,
+    onToggle: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    dragModifier: Modifier
+) {
+    val item = itemWithCompletion.item
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .graphicsLayer {
+                translationY = if (isDragging) dragOffsetY else slideOffset
+                shadowElevation = if (isDragging) 16f else 0f
+            }
+            .zIndex(if (isDragging) 1f else 0f)
+            .then(dragModifier)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Drag handle hint
+        Icon(
+            Icons.Default.DragHandle,
+            contentDescription = "Drag to reorder",
+            modifier = Modifier
+                .size(20.dp)
+                .padding(end = 2.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        )
+
+        Checkbox(
+            checked = itemWithCompletion.isCompleted,
+            onCheckedChange = { onToggle() },
+            modifier = Modifier.size(32.dp),
+            colors = CheckboxDefaults.colors(
+                checkedColor = MaterialTheme.colorScheme.secondary
+            )
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 4.dp)
+        ) {
+            Text(
+                item.title,
+                style = MaterialTheme.typography.bodySmall,
+                textDecoration = if (itemWithCompletion.isCompleted)
+                    TextDecoration.LineThrough
+                else
+                    TextDecoration.None,
+                color = if (itemWithCompletion.isCompleted)
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                else
+                    MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (item.timeMinutes != null) {
+                Text(
+                    formatTime(item.timeMinutes),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Edit icon → showEditRoutineItemDialog
+        IconButton(onClick = onEdit, modifier = Modifier.size(28.dp)) {
+            Icon(
+                Icons.Default.Edit,
+                contentDescription = "Edit",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+        }
+        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Remove",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task list item
+// ---------------------------------------------------------------------------
 
 @Composable
 private fun TaskListItem(
@@ -455,7 +652,9 @@ private fun TaskListItem(
             Checkbox(
                 checked = task.isCompleted,
                 onCheckedChange = { onToggleComplete() },
-                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary
+                )
             )
             Column(
                 modifier = Modifier
@@ -465,8 +664,14 @@ private fun TaskListItem(
                 Text(
                     task.title,
                     style = MaterialTheme.typography.bodyMedium,
-                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                    color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                    textDecoration = if (task.isCompleted)
+                        TextDecoration.LineThrough
+                    else
+                        TextDecoration.None,
+                    color = if (task.isCompleted)
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    else
+                        MaterialTheme.colorScheme.onSurface
                 )
                 if (task.description.isNotBlank()) {
                     Text(
@@ -486,10 +691,20 @@ private fun TaskListItem(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(formatTime(task.timeMinutes), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(
+                                Icons.Default.AccessTime,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                formatTime(task.timeMinutes),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
+                    // Due date badge
                     if (task.dueDate != null) {
                         val dueDate = java.time.LocalDate.ofEpochDay(task.dueDate)
                         val today = LocalDate.now()
@@ -502,7 +717,12 @@ private fun TaskListItem(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(12.dp), tint = dueColor)
+                            Icon(
+                                Icons.Default.CalendarToday,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = dueColor
+                            )
                             Text(
                                 "Due ${dueDate.format(DateTimeFormatter.ofPattern("MMM d"))}",
                                 style = MaterialTheme.typography.labelMedium,
@@ -514,25 +734,46 @@ private fun TaskListItem(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(Color(android.graphics.Color.parseColor(tag.colorHex)).copy(alpha = 0.25f))
+                                .background(
+                                    Color(android.graphics.Color.parseColor(tag.colorHex))
+                                        .copy(alpha = 0.25f)
+                                )
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Text(tag.name, style = MaterialTheme.typography.labelMedium, color = Color(android.graphics.Color.parseColor(tag.colorHex)))
+                            Text(
+                                tag.name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color(android.graphics.Color.parseColor(tag.colorHex))
+                            )
                         }
                     }
                 }
             }
             Row {
                 IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Edit",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Empty state
+// ---------------------------------------------------------------------------
 
 @Composable
 private fun EmptyTasksContent() {
@@ -550,7 +791,15 @@ private fun EmptyTasksContent() {
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         )
         Spacer(Modifier.height(16.dp))
-        Text("No tasks yet", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("Tap + to add your first task", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+        Text(
+            "No tasks yet",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            "Tap + to add your first task",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        )
     }
 }

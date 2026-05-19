@@ -34,4 +34,25 @@ interface TaskDao {
 
     @Query("DELETE FROM task_tags WHERE taskId = :taskId")
     suspend fun clearTaskTags(taskId: Long)
+
+    @Query("""
+        SELECT tasks.scheduledDate as dateEpochDay, COUNT(*) as completed
+        FROM tasks INNER JOIN task_tags ON tasks.id = task_tags.taskId
+        WHERE tasks.isCompleted = 1 AND task_tags.tagId = :tagId
+          AND tasks.scheduledDate >= :startDate AND tasks.scheduledDate <= :endDate
+        GROUP BY tasks.scheduledDate
+    """)
+    fun getCompletedTaskCountsByTagAndDateRange(
+        tagId: Long,
+        startDate: Long,
+        endDate: Long
+    ): Flow<List<com.tasktracker.data.database.dao.DateCompletedCount>>
+
+    @Query("""
+        SELECT COUNT(DISTINCT tasks.id) FROM tasks
+        INNER JOIN task_tags ON tasks.id = task_tags.taskId
+        WHERE task_tags.tagId = :tagId
+          AND tasks.scheduledDate >= :startDate AND tasks.scheduledDate <= :endDate
+    """)
+    suspend fun getTaskCountByTagAndDateRange(tagId: Long, startDate: Long, endDate: Long): Int
 }

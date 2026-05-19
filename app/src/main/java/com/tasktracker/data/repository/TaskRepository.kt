@@ -24,6 +24,12 @@ class TaskRepository(
 
     fun getAllTags(): Flow<List<Tag>> = tagDao.getAllTags()
 
+    fun getCompletedTaskCountsByTagAndDateRange(tagId: Long, startDate: Long, endDate: Long) =
+        taskDao.getCompletedTaskCountsByTagAndDateRange(tagId, startDate, endDate)
+
+    suspend fun getTaskCountByTagAndDateRange(tagId: Long, startDate: Long, endDate: Long): Int =
+        taskDao.getTaskCountByTagAndDateRange(tagId, startDate, endDate)
+
     suspend fun saveTask(task: Task, tagIds: List<Long>) {
         val taskId = if (task.id == 0L) {
             taskDao.insertTask(task)

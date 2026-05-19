@@ -43,6 +43,8 @@ val bottomNavScreens = listOf(Screen.Calendar, Screen.Tasks, Screen.YearView)
 @Composable
 fun AppNavigation(application: TaskTrackerApplication) {
     val navController = rememberNavController()
+    // Shared state: when Calendar requests editing a routine, navigate to Tasks tab
+    var navigateToRoutineId by remember { mutableStateOf<Long?>(null) }
 
     val calendarVm: CalendarViewModel = viewModel(
         factory = CalendarViewModel.Factory(
@@ -59,7 +61,10 @@ fun AppNavigation(application: TaskTrackerApplication) {
         )
     )
     val yearVm: YearViewViewModel = viewModel(
-        factory = YearViewViewModel.Factory(application.routineRepository)
+        factory = YearViewViewModel.Factory(
+            application.routineRepository,
+            application.taskRepository
+        )
     )
 
     Scaffold(
@@ -96,7 +101,18 @@ fun AppNavigation(application: TaskTrackerApplication) {
             modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())
         ) {
             composable(Screen.Calendar.route) {
-                CalendarScreen(viewModel = calendarVm)
+                CalendarScreen(
+                    viewModel = calendarVm,
+                    onNavigateToRoutine = { routineId ->
+                        navigateToRoutineId = routineId
+                        tasksVm.selectRoutineToEdit(routineId)
+                        navController.navigate(Screen.Tasks.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
             }
             composable(Screen.Tasks.route) {
                 TasksScreen(viewModel = tasksVm)
