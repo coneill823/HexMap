@@ -3,6 +3,22 @@ package com.tasktracker.data.models
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
 
+enum class OverviewGranularity { YEAR, MONTH, WEEK }
+
+data class SessionItemResult(
+    val item: RoutineItem,
+    val elapsedSeconds: Int
+)
+
+data class SessionState(
+    val routine: RoutineWithProgress,
+    val currentItemIndex: Int = 0,
+    val timerSeconds: Int = 0,
+    val completedItems: List<SessionItemResult> = emptyList(),
+    val isFinished: Boolean = false,
+    val averages: Map<Long, Float> = emptyMap()
+)
+
 data class RoutineItemWithCompletion(
     val item: RoutineItem,
     val isCompleted: Boolean

@@ -11,5 +11,8 @@ data class Task(
     val timeMinutes: Int? = null,
     val scheduledDate: Long? = null,
     val isCompleted: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val dueDate: Long? = null,
+    val reminderDaysBefore: Int? = null,
+    val reminderWorkerId: String? = null
 )

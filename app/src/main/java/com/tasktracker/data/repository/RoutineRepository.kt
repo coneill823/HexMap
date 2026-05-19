@@ -41,4 +41,16 @@ class RoutineRepository(private val routineDao: RoutineDao) {
             DailyRoutineCompletion(routineId, routineItemId, dateEpochDay, isCompleted)
         )
     }
+
+    suspend fun reorderItems(routineId: Long, fromIndex: Int, toIndex: Int) {
+        val items = routineDao.getItemsForRoutineOnce(routineId).toMutableList()
+        if (fromIndex !in items.indices || toIndex !in items.indices) return
+        val item = items.removeAt(fromIndex)
+        items.add(toIndex, item)
+        items.forEachIndexed { index, routineItem ->
+            routineDao.updateItemOrder(routineItem.id, index)
+        }
+    }
+
+    suspend fun updateRoutineItem(item: RoutineItem) = routineDao.updateRoutineItem(item)
 }

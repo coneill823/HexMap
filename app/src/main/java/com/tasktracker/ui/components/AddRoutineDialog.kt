@@ -1,8 +1,6 @@
 package com.tasktracker.ui.components
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -29,12 +27,13 @@ data class RoutineItemDraft(
 @Composable
 fun AddRoutineDialog(
     onDismiss: () -> Unit,
-    onConfirm: (Routine, List<RoutineItem>) -> Unit
+    onConfirm: (Routine, List<RoutineItem>, RecurrenceDraft) -> Unit
 ) {
     var routineName by remember { mutableStateOf("") }
     var routineDescription by remember { mutableStateOf("") }
     var items by remember { mutableStateOf(listOf<RoutineItemDraft>()) }
     var timePickerForIndex by remember { mutableStateOf<Int?>(null) }
+    var recurrenceDraft by remember { mutableStateOf(RecurrenceDraft()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -42,7 +41,7 @@ fun AddRoutineDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .heightIn(max = 500.dp)
+                    .heightIn(max = 540.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -62,6 +61,13 @@ fun AddRoutineDialog(
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 2
+                )
+
+                HorizontalDivider()
+
+                RecurrencePickerSection(
+                    draft = recurrenceDraft,
+                    onDraftChange = { recurrenceDraft = it }
                 )
 
                 HorizontalDivider()
@@ -109,7 +115,7 @@ fun AddRoutineDialog(
                                 orderIndex = i
                             )
                         }
-                    onConfirm(routine, routineItems)
+                    onConfirm(routine, routineItems, recurrenceDraft)
                 },
                 enabled = routineName.isNotBlank()
             ) { Text("Create") }
@@ -122,9 +128,7 @@ fun AddRoutineDialog(
             initialMinutes = items[idx].timeMinutes ?: 480,
             onDismiss = { timePickerForIndex = null },
             onConfirm = { minutes ->
-                items = items.toMutableList().also {
-                    it[idx] = it[idx].copy(timeMinutes = minutes)
-                }
+                items = items.toMutableList().also { it[idx] = it[idx].copy(timeMinutes = minutes) }
                 timePickerForIndex = null
             }
         )
@@ -168,9 +172,6 @@ private fun RoutineItemDraftRow(
                 Spacer(Modifier.width(4.dp))
                 TextButton(onClick = onSetTime) {
                     Text(draft.timeMinutes?.let { formatTime(it) } ?: "Set time")
-                }
-                if (draft.timeMinutes != null) {
-                    TextButton(onClick = { /* handled via callback */ }) { }
                 }
             }
         }
@@ -221,12 +222,7 @@ fun AddItemToRoutineDialog(
             TextButton(
                 onClick = {
                     onConfirm(
-                        RoutineItem(
-                            routineId = 0L,
-                            title = title.trim(),
-                            description = description.trim(),
-                            timeMinutes = timeMinutes
-                        )
+                        RoutineItem(routineId = 0L, title = title.trim(), description = description.trim(), timeMinutes = timeMinutes)
                     )
                 },
                 enabled = title.isNotBlank()
@@ -239,10 +235,7 @@ fun AddItemToRoutineDialog(
         TimePickerDialog(
             initialMinutes = timeMinutes ?: 480,
             onDismiss = { showTimePicker = false },
-            onConfirm = { minutes ->
-                timeMinutes = minutes
-                showTimePicker = false
-            }
+            onConfirm = { minutes -> timeMinutes = minutes; showTimePicker = false }
         )
     }
 }

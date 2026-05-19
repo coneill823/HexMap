@@ -61,4 +61,10 @@ interface RoutineDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertCompletion(completion: DailyRoutineCompletion)
+
+    @Query("UPDATE routine_items SET orderIndex = :newIndex WHERE id = :itemId")
+    suspend fun updateItemOrder(itemId: Long, newIndex: Int)
+
+    @Query("SELECT * FROM routine_items WHERE routineId = :routineId ORDER BY orderIndex ASC")
+    suspend fun getItemsForRoutineOnce(routineId: Long): List<RoutineItem>
 }

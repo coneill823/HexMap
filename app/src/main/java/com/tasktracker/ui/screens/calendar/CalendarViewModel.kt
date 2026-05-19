@@ -10,8 +10,10 @@ import com.tasktracker.data.database.entities.Task
 import com.tasktracker.data.models.RoutineItemWithCompletion
 import com.tasktracker.data.models.RoutineWithProgress
 import com.tasktracker.data.models.TaskWithTags
+import com.tasktracker.data.repository.RecurrenceRepository
 import com.tasktracker.data.repository.RoutineRepository
 import com.tasktracker.data.repository.TaskRepository
+import com.tasktracker.ui.components.RecurrenceDraft
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -26,7 +28,8 @@ data class CalendarUiState(
     val availableTags: List<Tag> = emptyList(),
     val showAddTaskDialog: Boolean = false,
     val showAddRoutineDialog: Boolean = false,
-    val editingRoutine: RoutineWithProgress? = null
+    val editingRoutine: RoutineWithProgress? = null,
+    val editingRoutineItem: RoutineItem? = null
 )
 
 private data class CalendarConfig(
@@ -34,13 +37,15 @@ private data class CalendarConfig(
     val currentMonth: YearMonth,
     val showAddTask: Boolean,
     val showAddRoutine: Boolean,
-    val editingRoutine: RoutineWithProgress?
+    val editingRoutine: RoutineWithProgress?,
+    val editingRoutineItem: RoutineItem? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CalendarViewModel(
     private val taskRepo: TaskRepository,
-    private val routineRepo: RoutineRepository
+    private val routineRepo: RoutineRepository,
+    private val recurrenceRepo: RecurrenceRepository? = null
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
@@ -48,15 +53,13 @@ class CalendarViewModel(
     private val _showAddTask = MutableStateFlow(false)
     private val _showAddRoutine = MutableStateFlow(false)
     private val _editingRoutine = MutableStateFlow<RoutineWithProgress?>(null)
+    private val _editingRoutineItem = MutableStateFlow<RoutineItem?>(null)
 
     val uiState: StateFlow<CalendarUiState> = combine(
-        _selectedDate,
-        _currentMonth,
-        _showAddTask,
-        _showAddRoutine,
-        _editingRoutine
-    ) { date, month, showAdd, showRoutine, editing ->
-        CalendarConfig(date, month, showAdd, showRoutine, editing)
+        combine(_selectedDate, _currentMonth, _showAddTask) { d, m, s -> Triple(d, m, s) },
+        combine(_showAddRoutine, _editingRoutine, _editingRoutineItem) { sr, er, eri -> Triple(sr, er, eri) }
+    ) { (date, month, showAdd), (showRoutine, editing, editingItem) ->
+        CalendarConfig(date, month, showAdd, showRoutine, editing, editingItem)
     }.flatMapLatest { config ->
         val epochDay = config.selectedDate.toEpochDay()
         combine(
@@ -88,7 +91,8 @@ class CalendarViewModel(
                 availableTags = tags,
                 showAddTaskDialog = config.showAddTask,
                 showAddRoutineDialog = config.showAddRoutine,
-                editingRoutine = config.editingRoutine
+                editingRoutine = config.editingRoutine,
+                editingRoutineItem = config.editingRoutineItem
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CalendarUiState())
@@ -108,9 +112,19 @@ class CalendarViewModel(
         _showAddTask.value = false
         _showAddRoutine.value = false
         _editingRoutine.value = null
+        _editingRoutineItem.value = null
     }
 
-    fun addTask(task: Task, tagIds: List<Long>) {
+    fun showEditRoutineItemDialog(item: RoutineItem) { _editingRoutineItem.value = item }
+
+    fun saveEditedRoutineItem(item: RoutineItem) {
+        viewModelScope.launch {
+            routineRepo.updateRoutineItem(item)
+            _editingRoutineItem.value = null
+        }
+    }
+
+    fun addTask(task: Task, tagIds: List<Long>, recurrence: com.tasktracker.ui.components.RecurrenceDraft) {
         viewModelScope.launch {
             taskRepo.saveTask(task, tagIds)
             _showAddTask.value = false
@@ -125,7 +139,7 @@ class CalendarViewModel(
         viewModelScope.launch { taskRepo.deleteTask(taskWithTags.task) }
     }
 
-    fun addRoutine(routine: Routine, items: List<RoutineItem>) {
+    fun addRoutine(routine: Routine, items: List<RoutineItem>, recurrence: com.tasktracker.ui.components.RecurrenceDraft) {
         viewModelScope.launch {
             val routineId = routineRepo.saveRoutine(routine)
             items.forEachIndexed { index, item ->
@@ -164,10 +178,11 @@ class CalendarViewModel(
 
     class Factory(
         private val taskRepo: TaskRepository,
-        private val routineRepo: RoutineRepository
+        private val routineRepo: RoutineRepository,
+        private val recurrenceRepo: RecurrenceRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CalendarViewModel(taskRepo, routineRepo) as T
+            CalendarViewModel(taskRepo, routineRepo, recurrenceRepo) as T
     }
 }

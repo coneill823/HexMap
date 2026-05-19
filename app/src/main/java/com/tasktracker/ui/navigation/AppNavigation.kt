@@ -33,18 +33,9 @@ sealed class Screen(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
-    object Calendar : Screen(
-        "calendar", "Calendar",
-        Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth
-    )
-    object Tasks : Screen(
-        "tasks", "Tasks",
-        Icons.Filled.CheckCircle, Icons.Outlined.CheckCircleOutline
-    )
-    object YearView : Screen(
-        "year_view", "Year",
-        Icons.Filled.GridView, Icons.Outlined.GridView
-    )
+    object Calendar : Screen("calendar", "Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth)
+    object Tasks : Screen("tasks", "Tasks & Routines", Icons.Filled.CheckCircle, Icons.Outlined.CheckCircleOutline)
+    object YearView : Screen("year_view", "Overview", Icons.Filled.GridView, Icons.Outlined.GridView)
 }
 
 val bottomNavScreens = listOf(Screen.Calendar, Screen.Tasks, Screen.YearView)
@@ -54,10 +45,18 @@ fun AppNavigation(application: TaskTrackerApplication) {
     val navController = rememberNavController()
 
     val calendarVm: CalendarViewModel = viewModel(
-        factory = CalendarViewModel.Factory(application.taskRepository, application.routineRepository)
+        factory = CalendarViewModel.Factory(
+            application.taskRepository,
+            application.routineRepository,
+            application.recurrenceRepository
+        )
     )
     val tasksVm: TasksViewModel = viewModel(
-        factory = TasksViewModel.Factory(application.taskRepository)
+        factory = TasksViewModel.Factory(
+            application.taskRepository,
+            application.routineRepository,
+            application.sessionLogRepository
+        )
     )
     val yearVm: YearViewViewModel = viewModel(
         factory = YearViewViewModel.Factory(application.routineRepository)

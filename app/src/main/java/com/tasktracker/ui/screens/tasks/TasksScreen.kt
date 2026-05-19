@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -18,33 +19,43 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tasktracker.data.database.entities.RoutineItem
+import com.tasktracker.data.models.RoutineWithProgress
 import com.tasktracker.data.models.TaskWithTags
 import com.tasktracker.ui.components.AddTaskDialog
+import com.tasktracker.ui.components.EditRoutineItemDialog
 import com.tasktracker.ui.components.ManageTagsDialog
+import com.tasktracker.ui.components.RecurrenceDraft
+import com.tasktracker.ui.components.SessionOverlayDialog
 import com.tasktracker.ui.components.formatTime
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksScreen(viewModel: TasksViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var selectedTabIndex by remember { mutableStateOf(0) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("My Tasks") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
+                title = { Text("Tasks & Routines") },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
                 actions = {
-                    IconButton(onClick = { viewModel.showManageTagsDialog() }) {
-                        Icon(Icons.Default.Label, contentDescription = "Manage Tags")
+                    if (selectedTabIndex == 0) {
+                        IconButton(onClick = { viewModel.showManageTagsDialog() }) {
+                            Icon(Icons.Default.Label, contentDescription = "Manage Tags")
+                        }
                     }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { viewModel.showAddTaskDialog() }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Task")
+            if (selectedTabIndex == 0) {
+                FloatingActionButton(onClick = { viewModel.showAddTaskDialog() }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Task")
+                }
             }
         }
     ) { padding ->
@@ -53,73 +64,48 @@ fun TasksScreen(viewModel: TasksViewModel) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Tag filter row
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    FilterChip(
-                        selected = state.selectedTagId == null,
-                        onClick = { viewModel.selectTag(null) },
-                        label = { Text("All") },
-                        leadingIcon = if (state.selectedTagId == null) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                        } else null
-                    )
-                }
-                items(state.tags) { tag ->
-                    val selected = tag.id == state.selectedTagId
-                    FilterChip(
-                        selected = selected,
-                        onClick = { viewModel.selectTag(if (selected) null else tag.id) },
-                        label = { Text(tag.name) },
-                        leadingIcon = {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .background(Color(android.graphics.Color.parseColor(tag.colorHex)))
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(android.graphics.Color.parseColor(tag.colorHex)).copy(alpha = 0.2f),
-                            selectedLabelColor = Color(android.graphics.Color.parseColor(tag.colorHex))
-                        )
-                    )
-                }
+            TabRow(selectedTabIndex = selectedTabIndex) {
+                Tab(
+                    selected = selectedTabIndex == 0,
+                    onClick = { selectedTabIndex = 0 },
+                    text = { Text("Tasks") },
+                    icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = selectedTabIndex == 1,
+                    onClick = { selectedTabIndex = 1 },
+                    text = { Text("Routines") },
+                    icon = { Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-
-            if (state.tasks.isEmpty()) {
-                EmptyTasksContent(onAddTask = { viewModel.showAddTaskDialog() })
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(bottom = 80.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    items(state.tasks, key = { it.task.id }) { taskWithTags ->
-                        TaskListItem(
-                            taskWithTags = taskWithTags,
-                            onToggleComplete = { viewModel.toggleTaskComplete(taskWithTags) },
-                            onEdit = { viewModel.showEditDialog(taskWithTags) },
-                            onDelete = { viewModel.deleteTask(taskWithTags) }
-                        )
-                    }
-                }
+            when (selectedTabIndex) {
+                0 -> TasksTab(
+                    state = state,
+                    onSelectTag = viewModel::selectTag,
+                    onToggleComplete = viewModel::toggleTaskComplete,
+                    onEdit = viewModel::showEditDialog,
+                    onDelete = viewModel::deleteTask
+                )
+                1 -> RoutinesTab(
+                    routines = state.routines,
+                    onStartSession = viewModel::startSession,
+                    onToggleItem = { routineId, itemId, completed -> viewModel.toggleRoutineItemComplete(routineId, itemId, completed) },
+                    onEditItem = viewModel::showEditRoutineItemDialog,
+                    onDeleteItem = viewModel::deleteRoutineItem,
+                    onDeleteRoutine = { viewModel.deleteRoutine(it.routine) },
+                    onReorderItem = viewModel::reorderItem
+                )
             }
         }
     }
 
+    // Dialogs
     if (state.showAddTaskDialog) {
         AddTaskDialog(
             tags = state.tags,
             onDismiss = viewModel::dismissDialogs,
-            onConfirm = viewModel::saveTask,
+            onConfirm = { task, tagIds, recurrence -> viewModel.saveTask(task, tagIds, recurrence) },
             onCreateTag = viewModel::saveTag
         )
     }
@@ -129,8 +115,16 @@ fun TasksScreen(viewModel: TasksViewModel) {
             tags = state.tags,
             editingTask = editing,
             onDismiss = viewModel::dismissDialogs,
-            onConfirm = viewModel::saveTask,
+            onConfirm = { task, tagIds, recurrence -> viewModel.saveTask(task, tagIds, recurrence) },
             onCreateTag = viewModel::saveTag
+        )
+    }
+
+    state.editingRoutineItem?.let { item ->
+        EditRoutineItemDialog(
+            item = item,
+            onDismiss = viewModel::dismissDialogs,
+            onConfirm = viewModel::saveRoutineItem
         )
     }
 
@@ -141,6 +135,299 @@ fun TasksScreen(viewModel: TasksViewModel) {
             onCreateTag = viewModel::saveTag,
             onDeleteTag = viewModel::deleteTag
         )
+    }
+
+    state.sessionState?.let { session ->
+        SessionOverlayDialog(
+            state = session,
+            onNext = viewModel::sessionNext,
+            onFinish = viewModel::sessionFinish,
+            onDismiss = viewModel::dismissSession
+        )
+    }
+}
+
+@Composable
+private fun TasksTab(
+    state: TasksUiState,
+    onSelectTag: (Long?) -> Unit,
+    onToggleComplete: (TaskWithTags) -> Unit,
+    onEdit: (TaskWithTags) -> Unit,
+    onDelete: (TaskWithTags) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                FilterChip(
+                    selected = state.selectedTagId == null,
+                    onClick = { onSelectTag(null) },
+                    label = { Text("All") },
+                    leadingIcon = if (state.selectedTagId == null) {
+                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    } else null
+                )
+            }
+            items(state.tags) { tag ->
+                val selected = tag.id == state.selectedTagId
+                FilterChip(
+                    selected = selected,
+                    onClick = { onSelectTag(if (selected) null else tag.id) },
+                    label = { Text(tag.name) },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(Color(android.graphics.Color.parseColor(tag.colorHex)))
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(android.graphics.Color.parseColor(tag.colorHex)).copy(alpha = 0.2f),
+                        selectedLabelColor = Color(android.graphics.Color.parseColor(tag.colorHex))
+                    )
+                )
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+        if (state.tasks.isEmpty()) {
+            EmptyTasksContent()
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(bottom = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                items(state.tasks, key = { it.task.id }) { taskWithTags ->
+                    TaskListItem(
+                        taskWithTags = taskWithTags,
+                        onToggleComplete = { onToggleComplete(taskWithTags) },
+                        onEdit = { onEdit(taskWithTags) },
+                        onDelete = { onDelete(taskWithTags) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoutinesTab(
+    routines: List<RoutineWithProgress>,
+    onStartSession: (RoutineWithProgress) -> Unit,
+    onToggleItem: (Long, Long, Boolean) -> Unit,
+    onEditItem: (RoutineItem) -> Unit,
+    onDeleteItem: (RoutineItem) -> Unit,
+    onDeleteRoutine: (RoutineWithProgress) -> Unit,
+    onReorderItem: (Long, Int, Int) -> Unit
+) {
+    if (routines.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(48.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                Icons.Default.Repeat,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "No routines yet",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Create routines from the Calendar tab",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
+        return
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(bottom = 80.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        items(routines, key = { it.routine.id }) { routine ->
+            RoutineManagementCard(
+                routine = routine,
+                onStartSession = { onStartSession(routine) },
+                onToggleItem = { itemId, completed -> onToggleItem(routine.routine.id, itemId, completed) },
+                onEditItem = onEditItem,
+                onDeleteItem = onDeleteItem,
+                onDeleteRoutine = { onDeleteRoutine(routine) },
+                onMoveItemUp = { index -> if (index > 0) onReorderItem(routine.routine.id, index, index - 1) },
+                onMoveItemDown = { index -> if (index < routine.items.size - 1) onReorderItem(routine.routine.id, index, index + 1) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun RoutineManagementCard(
+    routine: RoutineWithProgress,
+    onStartSession: () -> Unit,
+    onToggleItem: (Long, Boolean) -> Unit,
+    onEditItem: (RoutineItem) -> Unit,
+    onDeleteItem: (RoutineItem) -> Unit,
+    onDeleteRoutine: () -> Unit,
+    onMoveItemUp: (Int) -> Unit,
+    onMoveItemDown: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(true) }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(routine.routine.name, style = MaterialTheme.typography.titleSmall)
+                    if (routine.routine.description.isNotBlank()) {
+                        Text(
+                            routine.routine.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (routine.totalCount > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            LinearProgressIndicator(
+                                progress = { routine.progress },
+                                modifier = Modifier.width(80.dp).height(4.dp).clip(RoundedCornerShape(2.dp))
+                            )
+                            Text(
+                                "${routine.completedCount}/${routine.totalCount}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                IconButton(onClick = onStartSession, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Start Session",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = onDeleteRoutine, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete Routine",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                routine.items.forEachIndexed { index, itemWithCompletion ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Reorder buttons
+                        Column(modifier = Modifier.width(20.dp)) {
+                            IconButton(
+                                onClick = { onMoveItemUp(index) },
+                                enabled = index > 0,
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "Move up",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = if (index > 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onMoveItemDown(index) },
+                                enabled = index < routine.items.size - 1,
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Move down",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = if (index < routine.items.size - 1) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                )
+                            }
+                        }
+
+                        Checkbox(
+                            checked = itemWithCompletion.isCompleted,
+                            onCheckedChange = { onToggleItem(itemWithCompletion.item.id, itemWithCompletion.isCompleted) },
+                            modifier = Modifier.size(32.dp),
+                            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.secondary)
+                        )
+
+                        Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                            Text(
+                                itemWithCompletion.item.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                textDecoration = if (itemWithCompletion.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                color = if (itemWithCompletion.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                            )
+                            if (itemWithCompletion.item.timeMinutes != null) {
+                                Text(
+                                    formatTime(itemWithCompletion.item.timeMinutes),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        IconButton(onClick = { onEditItem(itemWithCompletion.item) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        }
+                        IconButton(onClick = { onDeleteItem(itemWithCompletion.item) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        }
+                    }
+                }
+                if (routine.items.isEmpty()) {
+                    Text(
+                        "No tasks in this routine",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -199,16 +486,27 @@ private fun TaskListItem(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Icon(
-                                Icons.Default.AccessTime,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(formatTime(task.timeMinutes), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (task.dueDate != null) {
+                        val dueDate = java.time.LocalDate.ofEpochDay(task.dueDate)
+                        val today = LocalDate.now()
+                        val dueColor = when {
+                            dueDate.isBefore(today) -> MaterialTheme.colorScheme.error
+                            dueDate == today -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.size(12.dp), tint = dueColor)
                             Text(
-                                formatTime(task.timeMinutes),
+                                "Due ${dueDate.format(DateTimeFormatter.ofPattern("MMM d"))}",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = dueColor
                             )
                         }
                     }
@@ -219,31 +517,17 @@ private fun TaskListItem(
                                 .background(Color(android.graphics.Color.parseColor(tag.colorHex)).copy(alpha = 0.25f))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Text(
-                                tag.name,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Color(android.graphics.Color.parseColor(tag.colorHex))
-                            )
+                            Text(tag.name, style = MaterialTheme.typography.labelMedium, color = Color(android.graphics.Color.parseColor(tag.colorHex)))
                         }
                     }
                 }
             }
             Row {
                 IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.Edit,
-                        contentDescription = "Edit",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -251,7 +535,7 @@ private fun TaskListItem(
 }
 
 @Composable
-private fun EmptyTasksContent(onAddTask: () -> Unit) {
+private fun EmptyTasksContent() {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -266,15 +550,7 @@ private fun EmptyTasksContent(onAddTask: () -> Unit) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         )
         Spacer(Modifier.height(16.dp))
-        Text(
-            "No tasks yet",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            "Tap + to add your first task",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        )
+        Text("No tasks yet", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Tap + to add your first task", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
     }
 }

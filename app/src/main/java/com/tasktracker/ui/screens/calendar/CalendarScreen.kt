@@ -29,6 +29,7 @@ import com.tasktracker.data.models.TaskWithTags
 import com.tasktracker.ui.components.AddItemToRoutineDialog
 import com.tasktracker.ui.components.AddRoutineDialog
 import com.tasktracker.ui.components.AddTaskDialog
+import com.tasktracker.ui.components.EditRoutineItemDialog
 import com.tasktracker.ui.components.formatTime
 import java.time.LocalDate
 import java.time.YearMonth
@@ -116,7 +117,8 @@ fun CalendarScreen(viewModel: CalendarViewModel) {
                         },
                         onAddItem = { showAddItemForRoutine = routineWithProgress },
                         onDeleteItem = { item -> viewModel.deleteRoutineItem(item) },
-                        onDeleteRoutine = { viewModel.deleteRoutine(routineWithProgress.routine) }
+                        onDeleteRoutine = { viewModel.deleteRoutine(routineWithProgress.routine) },
+                        onEditItem = { item -> viewModel.showEditRoutineItemDialog(item) }
                     )
                 }
             }
@@ -153,6 +155,14 @@ fun CalendarScreen(viewModel: CalendarViewModel) {
                 viewModel.addItemToRoutine(routine.routine.id, item)
                 showAddItemForRoutine = null
             }
+        )
+    }
+
+    state.editingRoutineItem?.let { item ->
+        EditRoutineItemDialog(
+            item = item,
+            onDismiss = viewModel::dismissDialogs,
+            onConfirm = viewModel::saveEditedRoutineItem
         )
     }
 }
@@ -371,7 +381,8 @@ private fun RoutineCard(
     onToggleItem: (Long, Boolean) -> Unit,
     onAddItem: () -> Unit,
     onDeleteItem: (RoutineItem) -> Unit,
-    onDeleteRoutine: () -> Unit
+    onDeleteRoutine: () -> Unit,
+    onEditItem: (RoutineItem) -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(true) }
 
@@ -452,7 +463,8 @@ private fun RoutineCard(
                         timeMinutes = itemWithCompletion.item.timeMinutes,
                         isCompleted = itemWithCompletion.isCompleted,
                         onToggle = { onToggleItem(itemWithCompletion.item.id, itemWithCompletion.isCompleted) },
-                        onDelete = { onDeleteItem(itemWithCompletion.item) }
+                        onDelete = { onDeleteItem(itemWithCompletion.item) },
+                        onEdit = { onEditItem(itemWithCompletion.item) }
                     )
                 }
                 if (routineWithProgress.items.isEmpty()) {
@@ -483,7 +495,8 @@ private fun RoutineItemRow(
     timeMinutes: Int?,
     isCompleted: Boolean,
     onToggle: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onEdit: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
@@ -517,6 +530,14 @@ private fun RoutineItemRow(
                 formatTime(timeMinutes),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onEdit, modifier = Modifier.size(28.dp)) {
+            Icon(
+                Icons.Default.Edit,
+                contentDescription = "Edit",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
         }
         IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
