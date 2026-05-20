@@ -250,6 +250,38 @@ fun TasksScreen(viewModel: TasksViewModel) {
             dismissButton = { TextButton(onClick = { routineItemToDelete = null }) { Text("Cancel") } }
         )
     }
+
+    // Task play dialog
+    val taskPlayState by viewModel.taskPlayState.collectAsStateWithLifecycle()
+    taskPlayState?.let { playState ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissTaskPlay() },
+            title = { Text(playState.task.title) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        formatPlayTimer(playState.timerSeconds),
+                        style = MaterialTheme.typography.displaySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (playState.isFinished) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Task completed!", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            },
+            confirmButton = {
+                if (!playState.isFinished) {
+                    Button(onClick = { viewModel.finishTaskPlay() }) { Text("Done") }
+                } else {
+                    Button(onClick = { viewModel.dismissTaskPlay() }) { Text("Close") }
+                }
+            },
+            dismissButton = if (!playState.isFinished) {
+                { TextButton(onClick = { viewModel.dismissTaskPlay() }) { Text("Cancel") } }
+            } else null
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +406,7 @@ private fun RoutinesTab(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                "Create routines from the Calendar tab",
+                "Tap + to create your first routine",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
@@ -896,6 +928,16 @@ private fun TaskListItem(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+private fun formatPlayTimer(seconds: Int): String {
+    val m = seconds / 60
+    val s = seconds % 60
+    return "%d:%02d".format(m, s)
 }
 
 // ---------------------------------------------------------------------------
