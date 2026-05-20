@@ -53,6 +53,7 @@ val bottomNavScreens = listOf(Screen.Calendar, Screen.Tasks, Screen.YearView, Sc
 fun AppNavigation(
     application: TaskTrackerApplication,
     widgetStartRoutineId: Long? = null,
+    widgetStartTaskId: Long? = null,
     onWidgetStartHandled: () -> Unit = {}
 ) {
     val navController = rememberNavController()
@@ -81,6 +82,18 @@ fun AppNavigation(
     LaunchedEffect(widgetStartRoutineId) {
         if (widgetStartRoutineId != null) {
             tasksVm.startRoutineById(widgetStartRoutineId)
+            navController.navigate(Screen.Tasks.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            onWidgetStartHandled()
+        }
+    }
+
+    LaunchedEffect(widgetStartTaskId) {
+        if (widgetStartTaskId != null) {
+            tasksVm.startTaskPlayById(widgetStartTaskId)
             navController.navigate(Screen.Tasks.route) {
                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                 launchSingleTop = true

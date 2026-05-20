@@ -175,15 +175,22 @@ class TasksViewModel(
                 recurrenceRepo?.saveRule(recurrence.toRule(taskId, "task", startDay))
             }
             dismissDialogs()
+            updateRoutineWidget()
         }
     }
 
     fun toggleTaskComplete(taskWithTags: TaskWithTags) {
-        viewModelScope.launch { taskRepo.toggleTaskComplete(taskWithTags.task) }
+        viewModelScope.launch {
+            taskRepo.toggleTaskComplete(taskWithTags.task)
+            updateRoutineWidget()
+        }
     }
 
     fun deleteTask(taskWithTags: TaskWithTags) {
-        viewModelScope.launch { taskRepo.deleteTask(taskWithTags.task) }
+        viewModelScope.launch {
+            taskRepo.deleteTask(taskWithTags.task)
+            updateRoutineWidget()
+        }
     }
 
     fun saveTag(tag: Tag) { viewModelScope.launch { taskRepo.saveTag(tag) } }
@@ -254,12 +261,24 @@ class TasksViewModel(
         }
     }
 
+    fun startTaskPlayById(taskId: Long) {
+        viewModelScope.launch {
+            withTimeoutOrNull(5000L) {
+                val task = uiState
+                    .mapNotNull { state -> state.tasks.firstOrNull { it.task.id == taskId } }
+                    .first()
+                startTaskPlay(task.task)
+            }
+        }
+    }
+
     fun showEditRoutineItemDialog(item: RoutineItem) { _editingRoutineItem.value = item }
 
     fun saveRoutineItem(item: RoutineItem) {
         viewModelScope.launch {
             routineRepo.updateRoutineItem(item)
             _editingRoutineItem.value = null
+            updateRoutineWidget()
         }
     }
 

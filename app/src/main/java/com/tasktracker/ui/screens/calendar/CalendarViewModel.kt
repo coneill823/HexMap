@@ -147,16 +147,25 @@ class CalendarViewModel(
             // Also include recurring tasks that occur on selectedDate and have no scheduledDate
             val recurringTasksForDate = allTasksRaw.filter { twt ->
                 val task = twt.task
-                if (task.id in dateTaskIds) return@filter false // already included
+                if (task.id in dateTaskIds) return@filter false
                 val taskRule = taskRulesMap[task.id] ?: return@filter false
                 val hasNoScheduledDate = task.scheduledDate == null || task.scheduledDate == 0L
                 hasNoScheduledDate && taskRule.occursOn(config.selectedDate)
+            }
+
+            // One-time tasks with no scheduled date and no recurrence rule — always pending
+            val unscheduledOneTimeTasks = allTasksRaw.filter { twt ->
+                val task = twt.task
+                if (task.id in dateTaskIds) return@filter false
+                if (taskRulesMap.containsKey(task.id)) return@filter false
+                task.scheduledDate == null || task.scheduledDate == 0L
             }
 
             // Merge and deduplicate by task ID
             val mergedTasksById = LinkedHashMap<Long, TaskWithTags>()
             dateTasksRaw.forEach { mergedTasksById[it.task.id] = it }
             recurringTasksForDate.forEach { mergedTasksById[it.task.id] = it }
+            unscheduledOneTimeTasks.forEach { mergedTasksById[it.task.id] = it }
             val filteredTasks = mergedTasksById.values.toList()
 
             CalendarUiState(
@@ -280,6 +289,7 @@ class CalendarViewModel(
         viewModelScope.launch {
             routineRepo.updateRoutineItem(item)
             _editingRoutineItem.value = null
+            updateRoutineWidget()
         }
     }
 
@@ -291,15 +301,22 @@ class CalendarViewModel(
                 recurrenceRepo?.saveRule(recurrence.toRule(taskId, "task", startDay))
             }
             _showAddTask.value = false
+            updateRoutineWidget()
         }
     }
 
     fun toggleTaskComplete(taskWithTags: TaskWithTags) {
-        viewModelScope.launch { taskRepo.toggleTaskComplete(taskWithTags.task) }
+        viewModelScope.launch {
+            taskRepo.toggleTaskComplete(taskWithTags.task)
+            updateRoutineWidget()
+        }
     }
 
     fun deleteTask(taskWithTags: TaskWithTags) {
-        viewModelScope.launch { taskRepo.deleteTask(taskWithTags.task) }
+        viewModelScope.launch {
+            taskRepo.deleteTask(taskWithTags.task)
+            updateRoutineWidget()
+        }
     }
 
     fun addRoutine(routine: Routine, items: List<RoutineItem>, recurrence: com.tasktracker.ui.components.RecurrenceDraft, tagIds: List<Long> = emptyList()) {

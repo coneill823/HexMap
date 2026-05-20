@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
     private val _widgetStartRoutineId = MutableStateFlow<Long?>(null)
+    private val _widgetStartTaskId = MutableStateFlow<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,6 +25,9 @@ class MainActivity : ComponentActivity() {
         intent?.getLongExtra("start_routine_id", -1L)?.takeIf { it != -1L }?.let {
             _widgetStartRoutineId.value = it
         }
+        intent?.getLongExtra("start_task_id", -1L)?.takeIf { it != -1L }?.let {
+            _widgetStartTaskId.value = it
+        }
 
         val application = applicationContext as TaskTrackerApplication
 
@@ -31,11 +35,16 @@ class MainActivity : ComponentActivity() {
             val theme by application.themeRepository.currentTheme
                 .collectAsState(initial = AppTheme.PURPLE)
             val widgetRoutineId by _widgetStartRoutineId.collectAsState()
+            val widgetTaskId by _widgetStartTaskId.collectAsState()
             TaskTrackerTheme(appTheme = theme) {
                 AppNavigation(
                     application = application,
                     widgetStartRoutineId = widgetRoutineId,
-                    onWidgetStartHandled = { _widgetStartRoutineId.value = null }
+                    widgetStartTaskId = widgetTaskId,
+                    onWidgetStartHandled = {
+                        _widgetStartRoutineId.value = null
+                        _widgetStartTaskId.value = null
+                    }
                 )
             }
         }
@@ -45,6 +54,9 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         intent.getLongExtra("start_routine_id", -1L).takeIf { it != -1L }?.let {
             _widgetStartRoutineId.value = it
+        }
+        intent.getLongExtra("start_task_id", -1L).takeIf { it != -1L }?.let {
+            _widgetStartTaskId.value = it
         }
     }
 }
