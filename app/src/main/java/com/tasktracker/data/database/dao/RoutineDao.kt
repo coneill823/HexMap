@@ -89,6 +89,9 @@ interface RoutineDao {
     @Delete
     suspend fun deleteRoutineItem(item: RoutineItem)
 
+    @Query("DELETE FROM routine_items WHERE id = :itemId")
+    suspend fun deleteRoutineItemById(itemId: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertCompletion(completion: DailyRoutineCompletion)
 

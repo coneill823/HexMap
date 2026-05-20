@@ -6,18 +6,25 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.tasktracker.data.database.entities.Routine
+import com.tasktracker.data.database.entities.RoutineItem
 import com.tasktracker.data.database.entities.Tag
 
 private val COLOR_PALETTE = listOf(
@@ -29,16 +36,25 @@ private val COLOR_PALETTE = listOf(
 @Composable
 fun EditRoutineDialog(
     routine: Routine,
+    routineItems: List<RoutineItem> = emptyList(),
+    initialRecurrenceDraft: RecurrenceDraft = RecurrenceDraft(),
     availableTags: List<Tag> = emptyList(),
     initialTagIds: List<Long> = emptyList(),
     onDismiss: () -> Unit,
-    onConfirm: (Routine, List<Long>) -> Unit
+    // (updatedRoutine, newItemsToAdd, itemIdsToDelete, recurrence, tagIds)
+    onConfirm: (Routine, List<RoutineItemDraft>, List<Long>, RecurrenceDraft, List<Long>) -> Unit
 ) {
     var name by remember { mutableStateOf(routine.name) }
     var timeMinutes by remember { mutableStateOf(routine.timeMinutes) }
     var showTimePicker by remember { mutableStateOf(false) }
     var selectedTagIds by remember { mutableStateOf(initialTagIds.toSet()) }
     var selectedColorHex by remember { mutableStateOf(routine.colorHex) }
+    var recurrenceDraft by remember { mutableStateOf(initialRecurrenceDraft) }
+
+    var existingItems by remember { mutableStateOf(routineItems.toList()) }
+    val deletedItemIds = remember { mutableStateListOf<Long>() }
+    var newItems by remember { mutableStateOf(listOf<RoutineItemDraft>()) }
+
     val timePickerState = rememberTimePickerState(
         initialHour = routine.timeMinutes?.div(60) ?: 8,
         initialMinute = routine.timeMinutes?.rem(60) ?: 0
@@ -53,9 +69,7 @@ fun EditRoutineDialog(
                     showTimePicker = false
                 }) { Text("OK") }
             },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) { Text("Cancel") }
-            },
+            dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("Cancel") } },
             text = { TimePicker(state = timePickerState) }
         )
     }
@@ -64,12 +78,18 @@ fun EditRoutineDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Routine") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Routine Name") },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -87,9 +107,7 @@ fun EditRoutineDialog(
                                 .clickable { selectedColorHex = hex },
                             contentAlignment = Alignment.Center
                         ) {
-                            if (selected) {
-                                Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            }
+                            if (selected) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -110,6 +128,13 @@ fun EditRoutineDialog(
                     }
                 }
 
+                HorizontalDivider()
+
+                RecurrencePickerSection(
+                    draft = recurrenceDraft,
+                    onDraftChange = { recurrenceDraft = it }
+                )
+
                 if (availableTags.isNotEmpty()) {
                     HorizontalDivider()
                     Text("Tags", style = MaterialTheme.typography.labelMedium)
@@ -129,6 +154,66 @@ fun EditRoutineDialog(
                         }
                     }
                 }
+
+                HorizontalDivider()
+
+                Text("Tasks in this Routine", style = MaterialTheme.typography.titleSmall)
+
+                existingItems.forEachIndexed { index, item ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = item.title,
+                            onValueChange = { newTitle ->
+                                existingItems = existingItems.toMutableList().also { it[index] = item.copy(title = newTitle) }
+                            },
+                            label = { Text("Task name") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(onClick = {
+                            deletedItemIds.add(item.id)
+                            existingItems = existingItems.toMutableList().also { it.removeAt(index) }
+                        }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+
+                newItems.forEachIndexed { index, draft ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = draft.title,
+                            onValueChange = { title ->
+                                newItems = newItems.toMutableList().also { it[index] = draft.copy(title = title) }
+                            },
+                            label = { Text("Task name") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(onClick = { newItems = newItems.toMutableList().also { it.removeAt(index) } }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = { newItems = newItems + RoutineItemDraft() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add Task")
+                }
             }
         },
         confirmButton = {
@@ -137,6 +222,9 @@ fun EditRoutineDialog(
                     if (name.isNotBlank()) {
                         onConfirm(
                             routine.copy(name = name.trim(), timeMinutes = timeMinutes, colorHex = selectedColorHex),
+                            newItems.filter { it.title.isNotBlank() },
+                            deletedItemIds.toList(),
+                            recurrenceDraft,
                             selectedTagIds.toList()
                         )
                     }
@@ -144,8 +232,6 @@ fun EditRoutineDialog(
                 enabled = name.isNotBlank()
             ) { Text("Save") }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

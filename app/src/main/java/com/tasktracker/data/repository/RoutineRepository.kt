@@ -54,6 +54,8 @@ class RoutineRepository(private val routineDao: RoutineDao) {
 
     suspend fun deleteRoutineItem(item: RoutineItem) = routineDao.deleteRoutineItem(item)
 
+    suspend fun deleteRoutineItemById(itemId: Long) = routineDao.deleteRoutineItemById(itemId)
+
     suspend fun setItemCompletion(
         routineId: Long,
         routineItemId: Long,

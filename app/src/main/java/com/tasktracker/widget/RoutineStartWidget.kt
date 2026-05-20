@@ -31,6 +31,8 @@ private fun safeColor(hex: String, fallback: Long): androidx.compose.ui.graphics
     androidx.compose.ui.graphics.Color(fallback)
 }
 
+private data class RoutineWithAvg(val routine: Routine, val avgLabel: String)
+
 class RoutineStartWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -39,16 +41,29 @@ class RoutineStartWidget : GlanceAppWidget() {
             app.routineRepository.getAllRoutinesWithItems().first().map { it.routine }
         } catch (_: Exception) { emptyList() }
 
+        val routinesWithAvg = allRoutines.map { routine ->
+            val avgLabel = try {
+                val itemAvgs = app.sessionLogRepository.getAverageTimePerItem(routine.id)
+                if (itemAvgs.isEmpty()) {
+                    "--:--"
+                } else {
+                    val totalSecs = itemAvgs.sumOf { it.avgSeconds.toDouble() }.toInt()
+                    "%d:%02d".format(totalSecs / 60, totalSecs % 60)
+                }
+            } catch (_: Exception) { "--:--" }
+            RoutineWithAvg(routine, avgLabel)
+        }
+
         provideContent {
             GlanceTheme {
-                RoutineListContent(context, allRoutines)
+                RoutineListContent(context, routinesWithAvg)
             }
         }
     }
 }
 
 @Composable
-private fun RoutineListContent(context: Context, routines: List<Routine>) {
+private fun RoutineListContent(context: Context, routines: List<RoutineWithAvg>) {
     val bg = androidx.compose.ui.graphics.Color(0xFF1A1A2E)
     val header = androidx.compose.ui.graphics.Color(0xFF9C71FF)
     val empty = androidx.compose.ui.graphics.Color(0xFFC4C0DC)
@@ -71,8 +86,8 @@ private fun RoutineListContent(context: Context, routines: List<Routine>) {
             )
         } else {
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-                items(routines) { routine ->
-                    RoutineListRow(context, routine)
+                items(routines) { item ->
+                    RoutineListRow(context, item)
                 }
             }
         }
@@ -80,13 +95,14 @@ private fun RoutineListContent(context: Context, routines: List<Routine>) {
 }
 
 @Composable
-private fun RoutineListRow(context: Context, routine: Routine) {
-    val accent = safeColor(routine.colorHex, 0xFF9C71FF)
+private fun RoutineListRow(context: Context, item: RoutineWithAvg) {
+    val accent = safeColor(item.routine.colorHex, 0xFF9C71FF)
     val textColor = androidx.compose.ui.graphics.Color(0xFFE4E1F5)
+    val mutedColor = androidx.compose.ui.graphics.Color(0xFFC4C0DC)
 
     val intent = Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        putExtra("start_routine_id", routine.id)
+        putExtra("start_routine_id", item.routine.id)
     }
 
     Row(
@@ -104,17 +120,17 @@ private fun RoutineListRow(context: Context, routine: Routine) {
         ) {}
         Spacer(GlanceModifier.width(10.dp))
         Text(
-            routine.name,
+            item.routine.name,
             style = TextStyle(color = ColorProvider(textColor)),
             modifier = GlanceModifier.defaultWeight()
         )
-        routine.timeMinutes?.let { mins ->
-            Text(
-                "%d:%02d".format(mins / 60, mins % 60),
-                style = TextStyle(color = ColorProvider(accent))
+        Text(
+            item.avgLabel,
+            style = TextStyle(
+                color = ColorProvider(if (item.avgLabel == "--:--") mutedColor else accent)
             )
-            Spacer(GlanceModifier.width(6.dp))
-        }
+        )
+        Spacer(GlanceModifier.width(6.dp))
         Text("▶", style = TextStyle(color = ColorProvider(accent)))
     }
 }

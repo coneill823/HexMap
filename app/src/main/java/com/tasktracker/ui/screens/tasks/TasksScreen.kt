@@ -32,6 +32,7 @@ import com.tasktracker.ui.components.EditRoutineItemDialog
 import com.tasktracker.ui.components.ManageTagsDialog
 import com.tasktracker.ui.components.SessionOverlayDialog
 import com.tasktracker.ui.components.formatTime
+import com.tasktracker.ui.components.toDraft
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
@@ -153,6 +154,8 @@ fun TasksScreen(viewModel: TasksViewModel) {
         AddTaskDialog(
             tags = state.tags,
             editingTask = editing,
+            initialRecurrenceDraft = state.taskRecurrenceRules[editing.task.id]?.toDraft()
+                ?: com.tasktracker.ui.components.RecurrenceDraft(),
             onDismiss = viewModel::dismissDialogs,
             onConfirm = { task, tagIds, recurrence -> viewModel.saveTask(task, tagIds, recurrence) },
             onCreateTag = viewModel::saveTag
@@ -197,13 +200,21 @@ fun TasksScreen(viewModel: TasksViewModel) {
     }
 
     state.editingRoutine?.let { routine ->
-        val currentTagIds = state.routines.firstOrNull { it.routine.id == routine.id }?.tags?.map { it.id } ?: emptyList()
+        val rwp = state.routines.firstOrNull { it.routine.id == routine.id }
+        val currentTagIds = rwp?.tags?.map { it.id } ?: emptyList()
+        val currentItems = rwp?.items?.map { it.item } ?: emptyList()
+        val existingRecurrence = state.routineRecurrenceRules[routine.id]?.toDraft()
+            ?: com.tasktracker.ui.components.RecurrenceDraft()
         com.tasktracker.ui.components.EditRoutineDialog(
             routine = routine,
+            routineItems = currentItems,
+            initialRecurrenceDraft = existingRecurrence,
             availableTags = state.tags,
             initialTagIds = currentTagIds,
             onDismiss = viewModel::dismissDialogs,
-            onConfirm = { updated, tagIds -> viewModel.saveEditedRoutine(updated, tagIds) }
+            onConfirm = { updated, newItems, deletedIds, recurrence, tagIds ->
+                viewModel.saveEditedRoutine(updated, newItems, deletedIds, recurrence, tagIds)
+            }
         )
     }
 

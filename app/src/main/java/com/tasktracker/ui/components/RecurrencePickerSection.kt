@@ -14,6 +14,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.tasktracker.data.database.entities.RecurrenceRule
 
+fun com.tasktracker.data.database.entities.RecurrenceRule.toDraft() = RecurrenceDraft(
+    enabled = true,
+    frequency = frequency,
+    interval = interval,
+    dayOfWeekMask = dayOfWeekMask,
+    nthWeekday = nthWeekday,
+    weekdayOfMonth = weekdayOfMonth
+)
+
 data class RecurrenceDraft(
     val enabled: Boolean = false,
     val frequency: String = "daily",

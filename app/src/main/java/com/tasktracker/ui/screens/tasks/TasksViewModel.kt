@@ -18,6 +18,7 @@ import com.tasktracker.data.repository.RecurrenceRepository
 import com.tasktracker.data.repository.RoutineRepository
 import com.tasktracker.data.repository.SessionLogRepository
 import com.tasktracker.data.repository.TaskRepository
+import com.tasktracker.data.database.entities.RecurrenceRule
 import com.tasktracker.data.database.entities.RoutineSessionLog
 import com.tasktracker.widget.RoutineStartWidget
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -46,7 +47,9 @@ data class TasksUiState(
     val editingRoutineItem: RoutineItem? = null,
     val editingRoutine: com.tasktracker.data.database.entities.Routine? = null,
     val sessionState: SessionState? = null,
-    val taskPlayState: TaskPlayState? = null
+    val taskPlayState: TaskPlayState? = null,
+    val taskRecurrenceRules: Map<Long, RecurrenceRule> = emptyMap(),
+    val routineRecurrenceRules: Map<Long, RecurrenceRule> = emptyMap()
 )
 
 private data class TasksConfig(
@@ -144,6 +147,10 @@ class TasksViewModel(
         uiState.copy(editingRoutine = editingRoutine)
     }.combine(_taskPlayState) { uiState, taskPlay ->
         uiState.copy(taskPlayState = taskPlay)
+    }.combine(recurrenceRepo?.getAllRulesForType("task") ?: kotlinx.coroutines.flow.flowOf(emptyList())) { uiState, rules ->
+        uiState.copy(taskRecurrenceRules = rules.associateBy { it.ownerId })
+    }.combine(recurrenceRepo?.getAllRulesForType("routine") ?: kotlinx.coroutines.flow.flowOf(emptyList())) { uiState, rules ->
+        uiState.copy(routineRecurrenceRules = rules.associateBy { it.ownerId })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TasksUiState())
 
     // Task management
@@ -188,11 +195,32 @@ class TasksViewModel(
         _editingRoutine.value = routine
     }
 
-    fun saveEditedRoutine(routine: com.tasktracker.data.database.entities.Routine, tagIds: List<Long> = emptyList()) {
+    fun saveEditedRoutine(
+        routine: com.tasktracker.data.database.entities.Routine,
+        newItems: List<com.tasktracker.ui.components.RoutineItemDraft> = emptyList(),
+        deletedItemIds: List<Long> = emptyList(),
+        recurrence: com.tasktracker.ui.components.RecurrenceDraft = com.tasktracker.ui.components.RecurrenceDraft(),
+        tagIds: List<Long> = emptyList()
+    ) {
         viewModelScope.launch {
             routineRepo.updateRoutine(routine)
+            deletedItemIds.forEach { id -> routineRepo.deleteRoutineItemById(id) }
+            val existingCount = routineRepo.getItemCountForRoutine(routine.id)
+            newItems.filter { it.title.isNotBlank() }.forEachIndexed { i, draft ->
+                routineRepo.saveRoutineItem(
+                    com.tasktracker.data.database.entities.RoutineItem(
+                        routineId = routine.id,
+                        title = draft.title.trim(),
+                        orderIndex = existingCount + i
+                    )
+                )
+            }
+            if (recurrence.enabled) {
+                recurrenceRepo?.saveRule(recurrence.toRule(routine.id, "routine", java.time.LocalDate.now().toEpochDay()))
+            }
             routineRepo.saveRoutineTags(routine.id, tagIds)
             _editingRoutine.value = null
+            updateRoutineWidget()
         }
     }
 

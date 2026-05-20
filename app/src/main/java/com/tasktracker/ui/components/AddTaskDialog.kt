@@ -37,6 +37,7 @@ fun AddTaskDialog(
     tags: List<Tag>,
     selectedDate: LocalDate? = null,
     editingTask: TaskWithTags? = null,
+    initialRecurrenceDraft: RecurrenceDraft = RecurrenceDraft(),
     onDismiss: () -> Unit,
     onConfirm: (Task, List<Long>, RecurrenceDraft) -> Unit,
     onCreateTag: (Tag) -> Unit
@@ -52,7 +53,7 @@ fun AddTaskDialog(
     var showDatePicker by remember { mutableStateOf(false) }
     var selectedReminderMinutes by remember { mutableStateOf(editingTask?.task?.reminderDaysBefore) }
     var showReminderDropdown by remember { mutableStateOf(false) }
-    var recurrenceDraft by remember { mutableStateOf(RecurrenceDraft()) }
+    var recurrenceDraft by remember { mutableStateOf(initialRecurrenceDraft) }
     var selectedColorHex by remember { mutableStateOf(editingTask?.task?.colorHex ?: "#9C71FF") }
 
     val titleError = title.isBlank()

@@ -336,6 +336,8 @@ private fun TodayTab(
 @Composable
 private fun CompactTaskCard(taskWithTags: TaskWithTags) {
     val task = taskWithTags.task
+    val accentColor = try { Color(android.graphics.Color.parseColor(task.colorHex)) }
+    catch (_: Exception) { Color(0xFF9C71FF) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -347,8 +349,11 @@ private fun CompactTaskCard(taskWithTags: TaskWithTags) {
                 MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(modifier = Modifier.width(4.dp).fillMaxHeight()
+                .background(accentColor.copy(alpha = if (task.isCompleted) 0.4f else 1f))) {}
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp).weight(1f),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -396,6 +401,7 @@ private fun CompactTaskCard(taskWithTags: TaskWithTags) {
                 )
             }
         }
+        } // close IntrinsicSize.Min Row
     }
 }
 
@@ -751,6 +757,9 @@ private fun CalendarRoutineCard(
     onStartSession: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val routine = routineWithProgress.routine
+    val accentColor = try { Color(android.graphics.Color.parseColor(routine.colorHex)) }
+    catch (_: Exception) { Color(0xFF9C71FF) }
 
     Card(
         modifier = Modifier
@@ -759,7 +768,9 @@ private fun CalendarRoutineCard(
             .animateContentSize(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(modifier = Modifier.width(4.dp).fillMaxHeight().background(accentColor)) {}
+        Column(modifier = Modifier.padding(12.dp).weight(1f)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -847,6 +858,7 @@ private fun CalendarRoutineCard(
                 }
             }
         }
+        } // close IntrinsicSize.Min Row
     }
 }
 
@@ -878,6 +890,8 @@ private fun TaskCard(
     onDelete: () -> Unit
 ) {
     val task = taskWithTags.task
+    val accentColor = try { Color(android.graphics.Color.parseColor(task.colorHex)) }
+    catch (_: Exception) { Color(0xFF9C71FF) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -889,8 +903,11 @@ private fun TaskCard(
                 MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(modifier = Modifier.width(4.dp).fillMaxHeight()
+                .background(accentColor.copy(alpha = if (task.isCompleted) 0.4f else 1f))) {}
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(12.dp).weight(1f),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
@@ -966,6 +983,7 @@ private fun TaskCard(
                 )
             }
         }
+        } // close IntrinsicSize.Min Row
     }
 }
 
