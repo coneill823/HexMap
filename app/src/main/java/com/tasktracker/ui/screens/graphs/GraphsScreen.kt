@@ -135,6 +135,16 @@ fun GraphsScreen(viewModel: GraphsViewModel) {
 
                             Canvas(modifier = Modifier.fillMaxSize()) {
                                 val gridCount = 4
+                                val yLabelPaint = android.graphics.Paint().apply {
+                                    color = android.graphics.Color.LTGRAY
+                                    textSize = 22f
+                                    textAlign = android.graphics.Paint.Align.RIGHT
+                                }
+                                val xLabelPaint = android.graphics.Paint().apply {
+                                    color = android.graphics.Color.LTGRAY
+                                    textSize = 20f
+                                    textAlign = android.graphics.Paint.Align.CENTER
+                                }
                                 // Grid lines + Y axis labels
                                 for (i in 0..gridCount) {
                                     val y = 8f + chartH * (1f - i.toFloat() / gridCount)
@@ -145,32 +155,21 @@ fun GraphsScreen(viewModel: GraphsViewModel) {
                                         strokeWidth = 1f
                                     )
                                     val labelVal = (maxY * i / gridCount).toInt()
-                                    drawContext.canvas.nativeCanvas.drawText(
-                                        "${labelVal}s",
-                                        leftPad - 6f,
-                                        y + 5f,
-                                        android.graphics.Paint().apply {
-                                            color = android.graphics.Color.LTGRAY
-                                            textSize = 22f
-                                            textAlign = android.graphics.Paint.Align.RIGHT
-                                        }
-                                    )
+                                    drawIntoCanvas { canvas ->
+                                        canvas.nativeCanvas.drawText("${labelVal}s", leftPad - 6f, y + 5f, yLabelPaint)
+                                    }
                                 }
 
                                 val xStep = if (dates.size > 1) chartW / (dates.size - 1) else chartW / 2
                                 dates.forEachIndexed { di, dateEpoch ->
                                     val x = leftPad + di * xStep
                                     if (di % maxOf(1, dates.size / 5) == 0 || di == dates.size - 1) {
-                                        drawContext.canvas.nativeCanvas.drawText(
-                                            LocalDate.ofEpochDay(dateEpoch).format(dateFmt),
-                                            x,
-                                            h - 4f,
-                                            android.graphics.Paint().apply {
-                                                color = android.graphics.Color.LTGRAY
-                                                textSize = 20f
-                                                textAlign = android.graphics.Paint.Align.CENTER
-                                            }
-                                        )
+                                        drawIntoCanvas { canvas ->
+                                            canvas.nativeCanvas.drawText(
+                                                LocalDate.ofEpochDay(dateEpoch).format(dateFmt),
+                                                x, h - 4f, xLabelPaint
+                                            )
+                                        }
                                     }
                                 }
 
