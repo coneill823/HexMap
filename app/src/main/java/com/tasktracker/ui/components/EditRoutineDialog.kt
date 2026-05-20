@@ -1,8 +1,12 @@
 package com.tasktracker.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Check
@@ -10,9 +14,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.Tag
+
+private val COLOR_PALETTE = listOf(
+    "#9C71FF", "#03DAC6", "#FF8A65", "#4CAF50",
+    "#2196F3", "#E91E63", "#FFEB3B", "#9E9E9E"
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,6 +38,7 @@ fun EditRoutineDialog(
     var timeMinutes by remember { mutableStateOf(routine.timeMinutes) }
     var showTimePicker by remember { mutableStateOf(false) }
     var selectedTagIds by remember { mutableStateOf(initialTagIds.toSet()) }
+    var selectedColorHex by remember { mutableStateOf(routine.colorHex) }
     val timePickerState = rememberTimePickerState(
         initialHour = routine.timeMinutes?.div(60) ?: 8,
         initialMinute = routine.timeMinutes?.rem(60) ?: 0
@@ -60,6 +72,28 @@ fun EditRoutineDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Text("Color", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    COLOR_PALETTE.forEach { hex ->
+                        val selected = hex == selectedColorHex
+                        val color = Color(android.graphics.Color.parseColor(hex))
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), CircleShape) else Modifier)
+                                .clickable { selectedColorHex = hex },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) {
+                                Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -101,7 +135,10 @@ fun EditRoutineDialog(
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onConfirm(routine.copy(name = name.trim(), timeMinutes = timeMinutes), selectedTagIds.toList())
+                        onConfirm(
+                            routine.copy(name = name.trim(), timeMinutes = timeMinutes, colorHex = selectedColorHex),
+                            selectedTagIds.toList()
+                        )
                     }
                 },
                 enabled = name.isNotBlank()

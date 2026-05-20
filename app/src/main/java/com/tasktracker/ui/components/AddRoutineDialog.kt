@@ -1,9 +1,13 @@
 package com.tasktracker.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -15,6 +19,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.tasktracker.data.database.entities.Routine
@@ -40,6 +46,11 @@ fun AddRoutineDialog(
     var routineTimeMinutes by remember { mutableStateOf<Int?>(null) }
     var recurrenceDraft by remember { mutableStateOf(RecurrenceDraft()) }
     var selectedTagIds by remember { mutableStateOf(emptySet<Long>()) }
+    var selectedColorHex by remember { mutableStateOf("#9C71FF") }
+    val colorPalette = listOf(
+        "#9C71FF", "#03DAC6", "#FF8A65", "#4CAF50",
+        "#2196F3", "#E91E63", "#FFEB3B", "#9E9E9E"
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -59,6 +70,27 @@ fun AddRoutineDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+
+                Text("Color", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    colorPalette.forEach { hex ->
+                        val selected = hex == selectedColorHex
+                        val color = Color(android.graphics.Color.parseColor(hex))
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), CircleShape) else Modifier)
+                                .clickable { selectedColorHex = hex },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) {
+                                Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
 
                 OutlinedButton(
                     onClick = { showTimePicker = true },
@@ -140,7 +172,8 @@ fun AddRoutineDialog(
                 onClick = {
                     val routine = Routine(
                         name = routineName.trim(),
-                        timeMinutes = routineTimeMinutes
+                        timeMinutes = routineTimeMinutes,
+                        colorHex = selectedColorHex
                     )
                     val routineItems = items
                         .filter { it.title.isNotBlank() }
