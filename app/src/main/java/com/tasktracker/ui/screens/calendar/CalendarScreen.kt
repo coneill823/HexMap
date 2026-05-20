@@ -496,63 +496,57 @@ private fun CalendarTab(
     state: CalendarUiState,
     viewModel: CalendarViewModel
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        MonthCalendar(
-            currentMonth = state.currentMonth,
-            selectedDate = state.selectedDate,
-            allRoutines = state.allRoutines,
-            routineRules = state.routineRules,
-            onDaySelected = viewModel::selectDate,
-            onPrevMonth = { viewModel.navigateMonth(-1) },
-            onNextMonth = { viewModel.navigateMonth(1) }
-        )
+    val sortedTasks = remember(state.tasks) {
+        state.tasks.sortedWith(compareBy(nullsLast()) { it.task.timeMinutes })
+    }
+    val sortedRoutines = remember(state.routines) {
+        state.routines.sortedWith(compareBy(nullsLast()) { it.routine.timeMinutes })
+    }
 
-        HorizontalDivider()
-
-        // Selected day header
-        Text(
-            text = state.selectedDate.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-
-        // Day content — tasks + routines sorted by timeMinutes (null last)
-        val sortedTasks = remember(state.tasks) {
-            state.tasks.sortedWith(compareBy(nullsLast()) { it.task.timeMinutes })
-        }
-        val sortedRoutines = remember(state.routines) {
-            state.routines.sortedWith(compareBy(nullsLast()) { it.routine.timeMinutes })
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 80.dp)
+    ) {
+        item {
+            MonthCalendar(
+                currentMonth = state.currentMonth,
+                selectedDate = state.selectedDate,
+                allRoutines = state.allRoutines,
+                routineRules = state.routineRules,
+                onDaySelected = viewModel::selectDate,
+                onPrevMonth = { viewModel.navigateMonth(-1) },
+                onNextMonth = { viewModel.navigateMonth(1) }
+            )
+            HorizontalDivider()
+            Text(
+                text = state.selectedDate.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
         }
 
         if (sortedTasks.isEmpty() && sortedRoutines.isEmpty()) {
-            EmptyDayContent()
+            item { EmptyDayContent() }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
-                if (sortedTasks.isNotEmpty()) {
-                    item { SectionHeader(title = "Tasks", icon = Icons.Default.CheckCircle) }
-                    items(sortedTasks, key = { "task_${it.task.id}" }) { taskWithTags ->
-                        TaskCard(
-                            taskWithTags = taskWithTags,
-                            onToggleComplete = { viewModel.toggleTaskComplete(taskWithTags) },
-                            onDelete = { viewModel.deleteTask(taskWithTags) }
-                        )
-                    }
+            if (sortedTasks.isNotEmpty()) {
+                item { SectionHeader(title = "Tasks", icon = Icons.Default.CheckCircle) }
+                items(sortedTasks, key = { "task_${it.task.id}" }) { taskWithTags ->
+                    TaskCard(
+                        taskWithTags = taskWithTags,
+                        onToggleComplete = { viewModel.toggleTaskComplete(taskWithTags) },
+                        onDelete = { viewModel.deleteTask(taskWithTags) }
+                    )
                 }
+            }
 
-                if (sortedRoutines.isNotEmpty()) {
-                    item { SectionHeader(title = "Routines", icon = Icons.Default.Repeat) }
-                    items(sortedRoutines, key = { "routine_${it.routine.id}" }) { routineWithProgress ->
-                        CalendarRoutineCard(
-                            routineWithProgress = routineWithProgress,
-                            onStartSession = { viewModel.startSession(routineWithProgress) }
-                        )
-                    }
+            if (sortedRoutines.isNotEmpty()) {
+                item { SectionHeader(title = "Routines", icon = Icons.Default.Repeat) }
+                items(sortedRoutines, key = { "routine_${it.routine.id}" }) { routineWithProgress ->
+                    CalendarRoutineCard(
+                        routineWithProgress = routineWithProgress,
+                        onStartSession = { viewModel.startSession(routineWithProgress) }
+                    )
                 }
             }
         }

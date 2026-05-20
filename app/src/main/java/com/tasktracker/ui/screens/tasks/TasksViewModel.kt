@@ -1,5 +1,8 @@
 package com.tasktracker.ui.screens.tasks
 
+import android.app.Application
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -16,6 +19,7 @@ import com.tasktracker.data.repository.RoutineRepository
 import com.tasktracker.data.repository.SessionLogRepository
 import com.tasktracker.data.repository.TaskRepository
 import com.tasktracker.data.database.entities.RoutineSessionLog
+import com.tasktracker.widget.RoutineStartWidget
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -56,11 +60,24 @@ private data class TasksConfig(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TasksViewModel(
+    application: Application,
     private val taskRepo: TaskRepository,
     private val routineRepo: RoutineRepository,
     private val sessionLogRepo: SessionLogRepository? = null,
     private val recurrenceRepo: RecurrenceRepository? = null
-) : ViewModel() {
+) : AndroidViewModel(application) {
+
+    private fun updateRoutineWidget() {
+        viewModelScope.launch {
+            try {
+                val ctx = getApplication<Application>()
+                val manager = GlanceAppWidgetManager(ctx)
+                manager.getGlanceIds(RoutineStartWidget::class.java).forEach { id ->
+                    RoutineStartWidget().update(ctx, id)
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
     private val _selectedTagId = MutableStateFlow<Long?>(null)
     private val _showAddTask = MutableStateFlow(false)
@@ -194,6 +211,7 @@ class TasksViewModel(
                 recurrenceRepo?.saveRule(recurrence.toRule(routineId, "routine", java.time.LocalDate.now().toEpochDay()))
             }
             routineRepo.saveRoutineTags(routineId, tagIds)
+            updateRoutineWidget()
         }
     }
 
@@ -228,7 +246,10 @@ class TasksViewModel(
     fun clearRoutineToEdit() { _editingRoutineId.value = null }
 
     fun deleteRoutine(routine: com.tasktracker.data.database.entities.Routine) {
-        viewModelScope.launch { routineRepo.softDeleteRoutine(routine.id) }
+        viewModelScope.launch {
+            routineRepo.softDeleteRoutine(routine.id)
+            updateRoutineWidget()
+        }
     }
 
     fun reorderItem(routineId: Long, fromIndex: Int, toIndex: Int) {
@@ -357,6 +378,7 @@ class TasksViewModel(
     }
 
     class Factory(
+        private val application: Application,
         private val taskRepo: TaskRepository,
         private val routineRepo: RoutineRepository,
         private val sessionLogRepo: SessionLogRepository? = null,
@@ -364,6 +386,6 @@ class TasksViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            TasksViewModel(taskRepo, routineRepo, sessionLogRepo, recurrenceRepo) as T
+            TasksViewModel(application, taskRepo, routineRepo, sessionLogRepo, recurrenceRepo) as T
     }
 }

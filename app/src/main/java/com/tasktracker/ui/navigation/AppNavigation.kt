@@ -61,6 +61,7 @@ fun AppNavigation(
 
     val calendarVm: CalendarViewModel = viewModel(
         factory = CalendarViewModel.Factory(
+            application,
             application.taskRepository,
             application.routineRepository,
             application.recurrenceRepository,
@@ -69,6 +70,7 @@ fun AppNavigation(
     )
     val tasksVm: TasksViewModel = viewModel(
         factory = TasksViewModel.Factory(
+            application,
             application.taskRepository,
             application.routineRepository,
             application.sessionLogRepository,

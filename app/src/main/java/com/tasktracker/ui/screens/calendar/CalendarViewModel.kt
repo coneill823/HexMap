@@ -1,5 +1,8 @@
 package com.tasktracker.ui.screens.calendar
 
+import android.app.Application
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -19,6 +22,7 @@ import com.tasktracker.data.repository.RoutineRepository
 import com.tasktracker.data.repository.SessionLogRepository
 import com.tasktracker.data.repository.TaskRepository
 import com.tasktracker.ui.components.RecurrenceDraft
+import com.tasktracker.widget.RoutineStartWidget
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -54,11 +58,24 @@ private data class CalendarConfig(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CalendarViewModel(
+    application: Application,
     private val taskRepo: TaskRepository,
     private val routineRepo: RoutineRepository,
     private val recurrenceRepo: RecurrenceRepository? = null,
     private val sessionLogRepo: SessionLogRepository? = null
-) : ViewModel() {
+) : AndroidViewModel(application) {
+
+    private fun updateRoutineWidget() {
+        viewModelScope.launch {
+            try {
+                val ctx = getApplication<Application>()
+                val manager = GlanceAppWidgetManager(ctx)
+                manager.getGlanceIds(RoutineStartWidget::class.java).forEach { id ->
+                    RoutineStartWidget().update(ctx, id)
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     private val _currentMonth = MutableStateFlow(YearMonth.now())
@@ -296,6 +313,7 @@ class CalendarViewModel(
             }
             routineRepo.saveRoutineTags(routineId, tagIds)
             _showAddRoutine.value = false
+            updateRoutineWidget()
         }
     }
 
@@ -308,7 +326,10 @@ class CalendarViewModel(
     }
 
     fun deleteRoutine(routine: Routine) {
-        viewModelScope.launch { routineRepo.deleteRoutine(routine) }
+        viewModelScope.launch {
+            routineRepo.deleteRoutine(routine)
+            updateRoutineWidget()
+        }
     }
 
     fun toggleRoutineItemComplete(
@@ -327,6 +348,7 @@ class CalendarViewModel(
     }
 
     class Factory(
+        private val application: Application,
         private val taskRepo: TaskRepository,
         private val routineRepo: RoutineRepository,
         private val recurrenceRepo: RecurrenceRepository? = null,
@@ -334,6 +356,6 @@ class CalendarViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            CalendarViewModel(taskRepo, routineRepo, recurrenceRepo, sessionLogRepo) as T
+            CalendarViewModel(application, taskRepo, routineRepo, recurrenceRepo, sessionLogRepo) as T
     }
 }
