@@ -64,10 +64,8 @@ fun TasksScreen(viewModel: TasksViewModel) {
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
                 actions = {
-                    if (selectedTabIndex == 0) {
-                        IconButton(onClick = { viewModel.showManageTagsDialog() }) {
-                            Icon(Icons.Default.Label, contentDescription = "Manage Tags")
-                        }
+                    IconButton(onClick = { viewModel.showManageTagsDialog() }) {
+                        Icon(Icons.Default.Label, contentDescription = "Manage Tags")
                     }
                 }
             )
@@ -122,7 +120,8 @@ fun TasksScreen(viewModel: TasksViewModel) {
                     onSelectTag = viewModel::selectTag,
                     onToggleComplete = viewModel::toggleTaskComplete,
                     onEdit = viewModel::showEditDialog,
-                    onDelete = { taskToDelete = it }
+                    onDelete = { taskToDelete = it },
+                    onPlay = { viewModel.startTaskPlay(it.task) }
                 )
                 1 -> RoutinesTab(
                     routines = state.routines,
@@ -263,7 +262,8 @@ private fun TasksTab(
     onSelectTag: (Long?) -> Unit,
     onToggleComplete: (TaskWithTags) -> Unit,
     onEdit: (TaskWithTags) -> Unit,
-    onDelete: (TaskWithTags) -> Unit
+    onDelete: (TaskWithTags) -> Unit,
+    onPlay: (TaskWithTags) -> Unit = {}
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         LazyRow(
@@ -329,7 +329,8 @@ private fun TasksTab(
                         taskWithTags = taskWithTags,
                         onToggleComplete = { onToggleComplete(taskWithTags) },
                         onEdit = { onEdit(taskWithTags) },
-                        onDelete = { onDelete(taskWithTags) }
+                        onDelete = { onDelete(taskWithTags) },
+                        onPlay = onPlay
                     )
                 }
             }
@@ -464,6 +465,27 @@ private fun RoutineManagementCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                    }
+                    if (routine.tags.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            routine.tags.forEach { tag ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(android.graphics.Color.parseColor(tag.colorHex)).copy(alpha = 0.25f))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        tag.name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(android.graphics.Color.parseColor(tag.colorHex))
+                                    )
+                                }
+                            }
+                        }
                     }
                     if (routine.totalCount > 0) {
                         Row(
@@ -657,11 +679,9 @@ private fun RoutineItemRow(
 
         Checkbox(
             checked = itemWithCompletion.isCompleted,
-            onCheckedChange = { onToggle() },
+            onCheckedChange = null,
             modifier = Modifier.size(32.dp),
-            colors = CheckboxDefaults.colors(
-                checkedColor = MaterialTheme.colorScheme.secondary
-            )
+            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.secondary)
         )
 
         Column(
@@ -721,7 +741,8 @@ private fun TaskListItem(
     taskWithTags: TaskWithTags,
     onToggleComplete: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onPlay: (TaskWithTags) -> Unit = {}
 ) {
     val task = taskWithTags.task
     Card(
@@ -848,6 +869,14 @@ private fun TaskListItem(
                 }
             }
             Row {
+                IconButton(onClick = { onPlay(taskWithTags) }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Play Task",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
                 IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Default.Edit,
