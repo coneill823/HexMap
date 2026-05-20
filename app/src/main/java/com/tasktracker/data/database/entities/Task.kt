@@ -14,5 +14,6 @@ data class Task(
     val createdAt: Long = System.currentTimeMillis(),
     val dueDate: Long? = null,
     val reminderDaysBefore: Int? = null,
-    val reminderWorkerId: String? = null
+    val reminderWorkerId: String? = null,
+    val colorHex: String = "#9C71FF"
 )

@@ -1,12 +1,15 @@
 package com.tasktracker.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,6 +19,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
+import com.tasktracker.data.database.entities.Tag
 
 data class RoutineItemDraft(
     val title: String = "",
@@ -26,14 +30,16 @@ data class RoutineItemDraft(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddRoutineDialog(
+    availableTags: List<Tag> = emptyList(),
     onDismiss: () -> Unit,
-    onConfirm: (Routine, List<RoutineItem>, RecurrenceDraft) -> Unit
+    onConfirm: (Routine, List<RoutineItem>, RecurrenceDraft, List<Long>) -> Unit
 ) {
     var routineName by remember { mutableStateOf("") }
     var items by remember { mutableStateOf(listOf<RoutineItemDraft>()) }
     var showTimePicker by remember { mutableStateOf(false) }
     var routineTimeMinutes by remember { mutableStateOf<Int?>(null) }
     var recurrenceDraft by remember { mutableStateOf(RecurrenceDraft()) }
+    var selectedTagIds by remember { mutableStateOf(emptySet<Long>()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -72,6 +78,26 @@ fun AddRoutineDialog(
                     draft = recurrenceDraft,
                     onDraftChange = { recurrenceDraft = it }
                 )
+
+                if (availableTags.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text("Tags", style = MaterialTheme.typography.labelMedium)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(availableTags) { tag ->
+                            val selected = tag.id in selectedTagIds
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    selectedTagIds = if (selected) selectedTagIds - tag.id else selectedTagIds + tag.id
+                                },
+                                label = { Text(tag.name) },
+                                leadingIcon = if (selected) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                } else null
+                            )
+                        }
+                    }
+                }
 
                 HorizontalDivider()
 
@@ -121,7 +147,7 @@ fun AddRoutineDialog(
                         .mapIndexed { i, draft ->
                             RoutineItem(routineId = 0L, title = draft.title.trim(), orderIndex = i)
                         }
-                    onConfirm(routine, routineItems, recurrenceDraft)
+                    onConfirm(routine, routineItems, recurrenceDraft, selectedTagIds.toList())
                 },
                 enabled = routineName.isNotBlank()
             ) { Text("Create") }

@@ -30,7 +30,7 @@ class TaskRepository(
     suspend fun getTaskCountByTagAndDateRange(tagId: Long, startDate: Long, endDate: Long): Int =
         taskDao.getTaskCountByTagAndDateRange(tagId, startDate, endDate)
 
-    suspend fun saveTask(task: Task, tagIds: List<Long>) {
+    suspend fun saveTask(task: Task, tagIds: List<Long>): Long {
         val taskId = if (task.id == 0L) {
             taskDao.insertTask(task)
         } else {
@@ -45,6 +45,7 @@ class TaskRepository(
         if (savedTask.dueDate != null && savedTask.reminderDaysBefore != null) {
             reminderScheduler?.scheduleIfNeeded(savedTask)
         }
+        return taskId
     }
 
     suspend fun toggleTaskComplete(task: Task) {

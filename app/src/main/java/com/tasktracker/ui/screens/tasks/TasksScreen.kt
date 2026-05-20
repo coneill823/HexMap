@@ -187,19 +187,23 @@ fun TasksScreen(viewModel: TasksViewModel) {
 
     if (showAddRoutineDialog) {
         com.tasktracker.ui.components.AddRoutineDialog(
+            availableTags = state.tags,
             onDismiss = { showAddRoutineDialog = false },
-            onConfirm = { routine, items, recurrence ->
-                viewModel.addRoutine(routine, items, recurrence)
+            onConfirm = { routine, items, recurrence, tagIds ->
+                viewModel.addRoutine(routine, items, recurrence, tagIds)
                 showAddRoutineDialog = false
             }
         )
     }
 
     state.editingRoutine?.let { routine ->
+        val currentTagIds = state.routines.firstOrNull { it.routine.id == routine.id }?.tags?.map { it.id } ?: emptyList()
         com.tasktracker.ui.components.EditRoutineDialog(
             routine = routine,
+            availableTags = state.tags,
+            initialTagIds = currentTagIds,
             onDismiss = viewModel::dismissDialogs,
-            onConfirm = viewModel::saveEditedRoutine
+            onConfirm = { updated, tagIds -> viewModel.saveEditedRoutine(updated, tagIds) }
         )
     }
 

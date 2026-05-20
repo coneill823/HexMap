@@ -1,6 +1,7 @@
 package com.tasktracker.ui.navigation
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
@@ -49,7 +50,11 @@ sealed class Screen(
 val bottomNavScreens = listOf(Screen.Calendar, Screen.Tasks, Screen.YearView, Screen.Graphs, Screen.Options)
 
 @Composable
-fun AppNavigation(application: TaskTrackerApplication) {
+fun AppNavigation(
+    application: TaskTrackerApplication,
+    widgetStartRoutineId: Long? = null,
+    onWidgetStartHandled: () -> Unit = {}
+) {
     val navController = rememberNavController()
     // Shared state: when Calendar requests editing a routine, navigate to Tasks tab
     var navigateToRoutineId by remember { mutableStateOf<Long?>(null) }
@@ -66,9 +71,22 @@ fun AppNavigation(application: TaskTrackerApplication) {
         factory = TasksViewModel.Factory(
             application.taskRepository,
             application.routineRepository,
-            application.sessionLogRepository
+            application.sessionLogRepository,
+            application.recurrenceRepository
         )
     )
+
+    LaunchedEffect(widgetStartRoutineId) {
+        if (widgetStartRoutineId != null) {
+            tasksVm.startRoutineById(widgetStartRoutineId)
+            navController.navigate(Screen.Tasks.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            onWidgetStartHandled()
+        }
+    }
     val yearVm: YearViewViewModel = viewModel(
         factory = YearViewViewModel.Factory(
             application.routineRepository,

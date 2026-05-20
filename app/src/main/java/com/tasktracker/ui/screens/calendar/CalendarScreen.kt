@@ -99,8 +99,9 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
     // Dialogs
     if (state.showAddRoutineDialog) {
         AddRoutineDialog(
+            availableTags = state.availableTags,
             onDismiss = viewModel::dismissDialogs,
-            onConfirm = viewModel::addRoutine
+            onConfirm = { routine, items, recurrence, tagIds -> viewModel.addRoutine(routine, items, recurrence, tagIds) }
         )
     }
 

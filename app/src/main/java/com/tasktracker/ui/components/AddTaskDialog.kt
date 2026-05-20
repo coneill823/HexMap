@@ -1,6 +1,7 @@
 package com.tasktracker.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -52,8 +53,14 @@ fun AddTaskDialog(
     var selectedReminderMinutes by remember { mutableStateOf(editingTask?.task?.reminderDaysBefore) }
     var showReminderDropdown by remember { mutableStateOf(false) }
     var recurrenceDraft by remember { mutableStateOf(RecurrenceDraft()) }
+    var selectedColorHex by remember { mutableStateOf(editingTask?.task?.colorHex ?: "#9C71FF") }
 
     val titleError = title.isBlank()
+
+    val colorPalette = listOf(
+        "#9C71FF", "#03DAC6", "#FF8A65", "#4CAF50",
+        "#2196F3", "#E91E63", "#FFEB3B", "#9E9E9E"
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -83,6 +90,28 @@ fun AddTaskDialog(
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 3
                 )
+
+                // Color picker
+                Text("Color", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    colorPalette.forEach { hex ->
+                        val selected = hex == selectedColorHex
+                        val color = Color(android.graphics.Color.parseColor(hex))
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), CircleShape) else Modifier)
+                                .clickable { selectedColorHex = hex },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) {
+                                Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
 
                 // Time picker button
                 OutlinedButton(
@@ -204,7 +233,8 @@ fun AddTaskDialog(
                             createdAt = editingTask?.task?.createdAt ?: System.currentTimeMillis(),
                             dueDate = dueDateEpochDay,
                             reminderDaysBefore = selectedReminderMinutes,
-                            reminderWorkerId = editingTask?.task?.reminderWorkerId
+                            reminderWorkerId = editingTask?.task?.reminderWorkerId,
+                            colorHex = selectedColorHex
                         )
                         onConfirm(task, selectedTagIds.toList(), recurrenceDraft)
                     }

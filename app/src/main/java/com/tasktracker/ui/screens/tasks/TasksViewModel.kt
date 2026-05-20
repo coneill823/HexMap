@@ -11,6 +11,7 @@ import com.tasktracker.data.models.RoutineWithProgress
 import com.tasktracker.data.models.SessionItemResult
 import com.tasktracker.data.models.SessionState
 import com.tasktracker.data.models.TaskWithTags
+import com.tasktracker.data.repository.RecurrenceRepository
 import com.tasktracker.data.repository.RoutineRepository
 import com.tasktracker.data.repository.SessionLogRepository
 import com.tasktracker.data.repository.TaskRepository
@@ -56,7 +57,8 @@ private data class TasksConfig(
 class TasksViewModel(
     private val taskRepo: TaskRepository,
     private val routineRepo: RoutineRepository,
-    private val sessionLogRepo: SessionLogRepository? = null
+    private val sessionLogRepo: SessionLogRepository? = null,
+    private val recurrenceRepo: RecurrenceRepository? = null
 ) : ViewModel() {
 
     private val _selectedTagId = MutableStateFlow<Long?>(null)
@@ -101,7 +103,8 @@ class TasksViewModel(
                                 it.routineId == rwi.routine.id && it.routineItemId == item.id && it.isCompleted
                             }
                         )
-                    }
+                    },
+                    tags = rwi.tags
                 )
             }
             TasksUiState(
@@ -141,7 +144,11 @@ class TasksViewModel(
 
     fun saveTask(task: Task, tagIds: List<Long>, recurrence: com.tasktracker.ui.components.RecurrenceDraft) {
         viewModelScope.launch {
-            taskRepo.saveTask(task, tagIds)
+            val taskId = taskRepo.saveTask(task, tagIds)
+            if (recurrence.enabled) {
+                val startDay = task.scheduledDate ?: java.time.LocalDate.now().toEpochDay()
+                recurrenceRepo?.saveRule(recurrence.toRule(taskId, "task", startDay))
+            }
             dismissDialogs()
         }
     }
@@ -163,9 +170,10 @@ class TasksViewModel(
         _editingRoutine.value = routine
     }
 
-    fun saveEditedRoutine(routine: com.tasktracker.data.database.entities.Routine) {
+    fun saveEditedRoutine(routine: com.tasktracker.data.database.entities.Routine, tagIds: List<Long> = emptyList()) {
         viewModelScope.launch {
             routineRepo.updateRoutine(routine)
+            routineRepo.saveRoutineTags(routine.id, tagIds)
             _editingRoutine.value = null
         }
     }
@@ -173,14 +181,24 @@ class TasksViewModel(
     fun addRoutine(
         routine: com.tasktracker.data.database.entities.Routine,
         items: List<com.tasktracker.data.database.entities.RoutineItem>,
-        recurrence: com.tasktracker.ui.components.RecurrenceDraft
+        recurrence: com.tasktracker.ui.components.RecurrenceDraft,
+        tagIds: List<Long> = emptyList()
     ) {
         viewModelScope.launch {
             val routineId = routineRepo.saveRoutine(routine)
             items.forEachIndexed { index, item ->
                 routineRepo.saveRoutineItem(item.copy(routineId = routineId, orderIndex = index))
             }
+            if (recurrence.enabled) {
+                recurrenceRepo?.saveRule(recurrence.toRule(routineId, "routine", java.time.LocalDate.now().toEpochDay()))
+            }
+            routineRepo.saveRoutineTags(routineId, tagIds)
         }
+    }
+
+    fun startRoutineById(routineId: Long) {
+        val routine = uiState.value.routines.firstOrNull { it.routine.id == routineId } ?: return
+        startSession(routine)
     }
 
     fun showEditRoutineItemDialog(item: RoutineItem) { _editingRoutineItem.value = item }
@@ -334,10 +352,11 @@ class TasksViewModel(
     class Factory(
         private val taskRepo: TaskRepository,
         private val routineRepo: RoutineRepository,
-        private val sessionLogRepo: SessionLogRepository? = null
+        private val sessionLogRepo: SessionLogRepository? = null,
+        private val recurrenceRepo: RecurrenceRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            TasksViewModel(taskRepo, routineRepo, sessionLogRepo) as T
+            TasksViewModel(taskRepo, routineRepo, sessionLogRepo, recurrenceRepo) as T
     }
 }

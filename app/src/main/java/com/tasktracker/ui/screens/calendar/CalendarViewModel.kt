@@ -268,7 +268,11 @@ class CalendarViewModel(
 
     fun addTask(task: Task, tagIds: List<Long>, recurrence: com.tasktracker.ui.components.RecurrenceDraft) {
         viewModelScope.launch {
-            taskRepo.saveTask(task, tagIds)
+            val taskId = taskRepo.saveTask(task, tagIds)
+            if (recurrence.enabled) {
+                val startDay = task.scheduledDate ?: LocalDate.now().toEpochDay()
+                recurrenceRepo?.saveRule(recurrence.toRule(taskId, "task", startDay))
+            }
             _showAddTask.value = false
         }
     }
@@ -281,12 +285,16 @@ class CalendarViewModel(
         viewModelScope.launch { taskRepo.deleteTask(taskWithTags.task) }
     }
 
-    fun addRoutine(routine: Routine, items: List<RoutineItem>, recurrence: com.tasktracker.ui.components.RecurrenceDraft) {
+    fun addRoutine(routine: Routine, items: List<RoutineItem>, recurrence: com.tasktracker.ui.components.RecurrenceDraft, tagIds: List<Long> = emptyList()) {
         viewModelScope.launch {
             val routineId = routineRepo.saveRoutine(routine)
             items.forEachIndexed { index, item ->
                 routineRepo.saveRoutineItem(item.copy(routineId = routineId, orderIndex = index))
             }
+            if (recurrence.enabled) {
+                recurrenceRepo?.saveRule(recurrence.toRule(routineId, "routine", LocalDate.now().toEpochDay()))
+            }
+            routineRepo.saveRoutineTags(routineId, tagIds)
             _showAddRoutine.value = false
         }
     }
