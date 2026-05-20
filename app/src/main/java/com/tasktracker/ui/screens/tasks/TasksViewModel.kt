@@ -1,7 +1,9 @@
 package com.tasktracker.ui.screens.tasks
 
 import android.app.Application
-import androidx.glance.appwidget.GlanceAppWidgetManager
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -20,7 +22,7 @@ import com.tasktracker.data.repository.SessionLogRepository
 import com.tasktracker.data.repository.TaskRepository
 import com.tasktracker.data.database.entities.RecurrenceRule
 import com.tasktracker.data.database.entities.RoutineSessionLog
-import com.tasktracker.widget.RoutineStartWidget
+import com.tasktracker.widget.RoutineStartWidgetReceiver
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -71,15 +73,19 @@ class TasksViewModel(
 ) : AndroidViewModel(application) {
 
     private fun updateRoutineWidget() {
-        viewModelScope.launch {
-            try {
-                val ctx = getApplication<Application>()
-                val manager = GlanceAppWidgetManager(ctx)
-                manager.getGlanceIds(RoutineStartWidget::class.java).forEach { id ->
-                    RoutineStartWidget().update(ctx, id)
-                }
-            } catch (_: Exception) {}
-        }
+        try {
+            val ctx = getApplication<Application>()
+            val manager = AppWidgetManager.getInstance(ctx)
+            val ids = manager.getAppWidgetIds(ComponentName(ctx, RoutineStartWidgetReceiver::class.java))
+            if (ids.isNotEmpty()) {
+                ctx.sendBroadcast(
+                    Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
+                        component = ComponentName(ctx, RoutineStartWidgetReceiver::class.java)
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+                    }
+                )
+            }
+        } catch (_: Exception) {}
     }
 
     private val _selectedTagId = MutableStateFlow<Long?>(null)

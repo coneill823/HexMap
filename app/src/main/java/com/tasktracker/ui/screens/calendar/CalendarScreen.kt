@@ -39,7 +39,7 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlinx.coroutines.launch
+
 
 // ---------------------------------------------------------------------------
 // CalendarScreen
@@ -85,8 +85,6 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
             when (selectedTabIndex) {
                 0 -> TodayTab(
                     state = state,
-                    onToggleTaskComplete = { viewModel.toggleTaskComplete(it) },
-                    onDeleteTask = { viewModel.deleteTask(it) },
                     onStartSession = { viewModel.startSession(it) }
                 )
                 1 -> CalendarTab(
@@ -125,51 +123,166 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
 }
 
 // ---------------------------------------------------------------------------
-// Today Tab — Card-based layout matching Calendar tab
+// Today Tab — Canvas-based timeline 6am to midnight
 // ---------------------------------------------------------------------------
+
+private val HOUR_HEIGHT = 64.dp
+private const val START_HOUR = 6
+private const val END_HOUR = 24
+private const val TOTAL_HOURS = END_HOUR - START_HOUR // 18
 
 @Composable
 private fun TodayTab(
     state: CalendarUiState,
-    onToggleTaskComplete: (TaskWithTags) -> Unit,
-    onDeleteTask: (TaskWithTags) -> Unit,
     onStartSession: (RoutineWithProgress) -> Unit
 ) {
-    val sortedTasks = remember(state.tasks) {
-        state.tasks.sortedWith(compareBy(nullsLast()) { it.task.timeMinutes })
-    }
-    val sortedRoutines = remember(state.routines) {
-        state.routines.sortedWith(compareBy(nullsLast()) { it.routine.timeMinutes })
+    val now = LocalTime.now()
+    val currentMinutes = now.hour * 60 + now.minute
+
+    val unscheduledTasks = remember(state.tasks) { state.tasks.filter { it.task.timeMinutes == null } }
+    val scheduledTasks = remember(state.tasks) { state.tasks.filter { it.task.timeMinutes != null } }
+    val unscheduledRoutines = remember(state.routines) { state.routines.filter { it.routine.timeMinutes == null } }
+    val scheduledRoutines = remember(state.routines) { state.routines.filter { it.routine.timeMinutes != null } }
+
+    val hasUnscheduled = unscheduledTasks.isNotEmpty() || unscheduledRoutines.isNotEmpty()
+
+    val scrollState = rememberScrollState()
+    LaunchedEffect(scrollState.maxValue) {
+        if (scrollState.maxValue > 0) {
+            val currentHourOffset = (currentMinutes - START_HOUR * 60).coerceAtLeast(0)
+            val fractionOfTimeline = currentHourOffset.toFloat() / (TOTAL_HOURS * 60)
+            scrollState.animateScrollTo((fractionOfTimeline * scrollState.maxValue).toInt())
+        }
     }
 
-    if (sortedTasks.isEmpty() && sortedRoutines.isEmpty()) {
-        EmptyTodayContent()
-        return
-    }
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (hasUnscheduled) {
+            Text(
+                text = "Unscheduled",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+            unscheduledTasks.forEach { twt -> CompactTaskCard(twt) }
+            unscheduledRoutines.forEach { rwp ->
+                CompactRoutineCard(rwp, onStartSession = { onStartSession(rwp) })
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 80.dp)
-    ) {
-        if (sortedTasks.isNotEmpty()) {
-            item { SectionHeader(title = "Tasks", icon = Icons.Default.CheckCircle) }
-            items(sortedTasks, key = { "task_${it.task.id}" }) { taskWithTags ->
-                TaskCard(
-                    taskWithTags = taskWithTags,
-                    onToggleComplete = { onToggleTaskComplete(taskWithTags) },
-                    onDelete = { onDeleteTask(taskWithTags) }
-                )
+        val hourHeightDp = HOUR_HEIGHT
+        val totalHeightDp = hourHeightDp * TOTAL_HOURS
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(scrollState)
+        ) {
+            val surfaceVariantColor = MaterialTheme.colorScheme.onSurface
+            val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(totalHeightDp)
+            ) {
+                val leftPad = 56.dp.toPx()
+                val hourPx = hourHeightDp.toPx()
+                for (hour in 0..TOTAL_HOURS) {
+                    val y = hourPx * hour
+                    drawLine(
+                        color = surfaceVariantColor.copy(alpha = 0.12f),
+                        start = Offset(leftPad, y),
+                        end = Offset(size.width, y),
+                        strokeWidth = 1f
+                    )
+                    if (hour < TOTAL_HOURS) {
+                        val yHalf = y + hourPx / 2f
+                        drawLine(
+                            color = surfaceVariantColor.copy(alpha = 0.05f),
+                            start = Offset(leftPad, yHalf),
+                            end = Offset(size.width, yHalf),
+                            strokeWidth = 1f
+                        )
+                    }
+                }
+            }
+
+            Column(modifier = Modifier.width(52.dp)) {
+                for (hour in 0..TOTAL_HOURS) {
+                    Box(
+                        modifier = Modifier.height(hourHeightDp),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
+                        val h = START_HOUR + hour
+                        val label = when {
+                            h == 0 -> "12am"
+                            h < 12 -> "${h}am"
+                            h == 12 -> "12pm"
+                            h == 24 -> "12am"
+                            else -> "${h - 12}pm"
+                        }
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = onSurfaceVariantColor.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(end = 6.dp, top = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            scheduledTasks.forEach { twt ->
+                val timeMin = twt.task.timeMinutes ?: return@forEach
+                if (timeMin < START_HOUR * 60 || timeMin >= END_HOUR * 60) return@forEach
+                val yOffsetDp = hourHeightDp * ((timeMin - START_HOUR * 60) / 60f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset(y = yOffsetDp)
+                        .padding(start = 58.dp, end = 8.dp)
+                ) { CompactTaskCard(twt) }
+            }
+
+            scheduledRoutines.forEach { rwp ->
+                val timeMin = rwp.routine.timeMinutes ?: return@forEach
+                if (timeMin < START_HOUR * 60 || timeMin >= END_HOUR * 60) return@forEach
+                val yOffsetDp = hourHeightDp * ((timeMin - START_HOUR * 60) / 60f)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset(y = yOffsetDp)
+                        .padding(start = 58.dp, end = 8.dp)
+                ) { CompactRoutineCard(rwp, onStartSession = { onStartSession(rwp) }) }
+            }
+
+            if (currentMinutes >= START_HOUR * 60 && currentMinutes < END_HOUR * 60) {
+                val yOffsetDp = hourHeightDp * ((currentMinutes - START_HOUR * 60) / 60f)
+                val errorColor = MaterialTheme.colorScheme.error
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .offset(y = yOffsetDp)
+                ) {
+                    drawLine(
+                        color = errorColor,
+                        start = Offset(52.dp.toPx(), 0f),
+                        end = Offset(size.width, 0f),
+                        strokeWidth = 2f
+                    )
+                    drawCircle(
+                        color = errorColor,
+                        radius = 5.dp.toPx(),
+                        center = Offset(52.dp.toPx(), 0f)
+                    )
+                }
             }
         }
 
-        if (sortedRoutines.isNotEmpty()) {
-            item { SectionHeader(title = "Routines", icon = Icons.Default.Repeat) }
-            items(sortedRoutines, key = { "routine_${it.routine.id}" }) { routineWithProgress ->
-                CalendarRoutineCard(
-                    routineWithProgress = routineWithProgress,
-                    onStartSession = { onStartSession(routineWithProgress) }
-                )
-            }
+        if (state.tasks.isEmpty() && state.routines.isEmpty()) {
+            EmptyTodayContent()
         }
     }
 }
