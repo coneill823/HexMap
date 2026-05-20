@@ -1,6 +1,7 @@
 package com.tasktracker.data.repository
 
 import com.tasktracker.data.database.dao.ItemAvgSeconds
+import com.tasktracker.data.database.dao.ItemSessionPoint
 import com.tasktracker.data.database.dao.SessionLogDao
 import com.tasktracker.data.database.entities.RoutineSessionLog
 import kotlinx.coroutines.flow.Flow
@@ -13,4 +14,7 @@ class SessionLogRepository(private val sessionLogDao: SessionLogDao) {
 
     fun getLogsForRoutine(routineId: Long): Flow<List<RoutineSessionLog>> =
         sessionLogDao.getLogsForRoutine(routineId)
+
+    fun getSessionPointsForRoutine(routineId: Long): Flow<List<ItemSessionPoint>> =
+        sessionLogDao.getSessionPointsForRoutine(routineId)
 }

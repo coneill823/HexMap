@@ -29,7 +29,22 @@ class RoutineRepository(private val routineDao: RoutineDao) {
         if (routine.id == 0L) routineDao.insertRoutine(routine)
         else { routineDao.updateRoutine(routine); routine.id }
 
-    suspend fun deleteRoutine(routine: Routine) = routineDao.deleteRoutine(routine)
+    suspend fun deleteRoutine(routine: Routine) = softDeleteRoutine(routine.id)
+
+    suspend fun softDeleteRoutine(routineId: Long) {
+        routineDao.softDelete(routineId, System.currentTimeMillis())
+    }
+
+    fun getDeletedRoutines(): Flow<List<Routine>> = routineDao.getDeletedRoutines()
+
+    suspend fun restoreRoutine(routineId: Long) = routineDao.restoreRoutine(routineId)
+
+    suspend fun purgeExpiredRoutines() {
+        val cutoff = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
+        routineDao.purgeExpiredRoutines(cutoff)
+    }
+
+    suspend fun updateRoutine(routine: Routine) = routineDao.updateRoutine(routine)
 
     suspend fun saveRoutineItem(item: RoutineItem): Long =
         if (item.id == 0L) routineDao.insertRoutineItem(item)
@@ -59,4 +74,7 @@ class RoutineRepository(private val routineDao: RoutineDao) {
     }
 
     suspend fun updateRoutineItem(item: RoutineItem) = routineDao.updateRoutineItem(item)
+
+    suspend fun getItemsForRoutine(routineId: Long): List<RoutineItem> =
+        routineDao.getItemsForRoutineOnce(routineId)
 }

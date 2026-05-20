@@ -51,14 +51,42 @@ fun YearViewScreen(viewModel: YearViewViewModel) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Granularity selector
-            TabRow(selectedTabIndex = state.granularity.ordinal) {
-                OverviewGranularity.entries.forEach { gran ->
-                    Tab(
-                        selected = state.granularity == gran,
-                        onClick = { viewModel.setGranularity(gran) },
-                        text = { Text(gran.name.lowercase().replaceFirstChar { it.uppercase() }) }
+            // Granularity selector — dropdown to avoid compressed tabs
+            var granDropdownExpanded by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("View", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp))
+                ExposedDropdownMenuBox(
+                    expanded = granDropdownExpanded,
+                    onExpandedChange = { granDropdownExpanded = it },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        value = state.granularity.name.lowercase().replaceFirstChar { it.uppercase() },
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = granDropdownExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        singleLine = true
                     )
+                    ExposedDropdownMenu(
+                        expanded = granDropdownExpanded,
+                        onDismissRequest = { granDropdownExpanded = false }
+                    ) {
+                        OverviewGranularity.entries.forEach { gran ->
+                            DropdownMenuItem(
+                                text = { Text(gran.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                onClick = {
+                                    viewModel.setGranularity(gran)
+                                    granDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
                 }
             }
 

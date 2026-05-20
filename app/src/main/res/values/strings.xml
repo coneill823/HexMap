@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TaskTracker</string>
+    <string name="routine_start_widget_description">Shows your routines so you can quickly start one</string>
+    <string name="week_progress_widget_description">Shows your routine completion progress for the current week</string>
 </resources>

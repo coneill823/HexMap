@@ -5,6 +5,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material.icons.outlined.GridView
@@ -22,6 +24,10 @@ import androidx.navigation.compose.rememberNavController
 import com.tasktracker.TaskTrackerApplication
 import com.tasktracker.ui.screens.calendar.CalendarScreen
 import com.tasktracker.ui.screens.calendar.CalendarViewModel
+import com.tasktracker.ui.screens.graphs.GraphsScreen
+import com.tasktracker.ui.screens.graphs.GraphsViewModel
+import com.tasktracker.ui.screens.options.OptionsScreen
+import com.tasktracker.ui.screens.options.OptionsViewModel
 import com.tasktracker.ui.screens.tasks.TasksScreen
 import com.tasktracker.ui.screens.tasks.TasksViewModel
 import com.tasktracker.ui.screens.yearview.YearViewScreen
@@ -36,9 +42,11 @@ sealed class Screen(
     object Calendar : Screen("calendar", "Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth)
     object Tasks : Screen("tasks", "Tasks & Routines", Icons.Filled.CheckCircle, Icons.Outlined.CheckCircleOutline)
     object YearView : Screen("year_view", "Overview", Icons.Filled.GridView, Icons.Outlined.GridView)
+    object Graphs : Screen("graphs", "Graphs", Icons.Filled.ShowChart, Icons.Filled.ShowChart)
+    object Options : Screen("options", "Options", Icons.Filled.Settings, Icons.Filled.Settings)
 }
 
-val bottomNavScreens = listOf(Screen.Calendar, Screen.Tasks, Screen.YearView)
+val bottomNavScreens = listOf(Screen.Calendar, Screen.Tasks, Screen.YearView, Screen.Graphs, Screen.Options)
 
 @Composable
 fun AppNavigation(application: TaskTrackerApplication) {
@@ -50,7 +58,8 @@ fun AppNavigation(application: TaskTrackerApplication) {
         factory = CalendarViewModel.Factory(
             application.taskRepository,
             application.routineRepository,
-            application.recurrenceRepository
+            application.recurrenceRepository,
+            application.sessionLogRepository
         )
     )
     val tasksVm: TasksViewModel = viewModel(
@@ -65,6 +74,12 @@ fun AppNavigation(application: TaskTrackerApplication) {
             application.routineRepository,
             application.taskRepository
         )
+    )
+    val graphsVm: GraphsViewModel = viewModel(
+        factory = GraphsViewModel.Factory(application.routineRepository, application.sessionLogRepository)
+    )
+    val optionsVm: OptionsViewModel = viewModel(
+        factory = OptionsViewModel.Factory(application.themeRepository, application.routineRepository)
     )
 
     Scaffold(
@@ -119,6 +134,12 @@ fun AppNavigation(application: TaskTrackerApplication) {
             }
             composable(Screen.YearView.route) {
                 YearViewScreen(viewModel = yearVm)
+            }
+            composable(Screen.Graphs.route) {
+                GraphsScreen(viewModel = graphsVm)
+            }
+            composable(Screen.Options.route) {
+                OptionsScreen(viewModel = optionsVm)
             }
         }
     }

@@ -9,6 +9,9 @@ import com.tasktracker.data.repository.RecurrenceRepository
 import com.tasktracker.data.repository.RoutineRepository
 import com.tasktracker.data.repository.SessionLogRepository
 import com.tasktracker.data.repository.TaskRepository
+import com.tasktracker.data.repository.ThemeRepository
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import com.tasktracker.work.ReminderScheduler
 import com.tasktracker.work.ReminderWorker
 
@@ -19,10 +22,15 @@ class TaskTrackerApplication : Application() {
     val routineRepository by lazy { RoutineRepository(database.routineDao()) }
     val recurrenceRepository by lazy { RecurrenceRepository(database.recurrenceDao()) }
     val sessionLogRepository by lazy { SessionLogRepository(database.sessionLogDao()) }
+    val themeRepository by lazy { ThemeRepository(this) }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Purge expired soft-deleted routines on startup
+        GlobalScope.launch {
+            routineRepository.purgeExpiredRoutines()
+        }
     }
 
     private fun createNotificationChannel() {

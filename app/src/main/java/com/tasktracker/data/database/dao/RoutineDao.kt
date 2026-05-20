@@ -15,11 +15,23 @@ data class DateCompletedCount(
 @Dao
 interface RoutineDao {
     @Transaction
-    @Query("SELECT * FROM routines ORDER BY createdAt ASC")
+    @Query("SELECT * FROM routines WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun getAllRoutinesWithItems(): Flow<List<RoutineWithItems>>
 
     @Query("SELECT * FROM routines ORDER BY createdAt ASC")
     fun getAllRoutines(): Flow<List<Routine>>
+
+    @Query("UPDATE routines SET deletedAt = :timestamp WHERE id = :routineId")
+    suspend fun softDelete(routineId: Long, timestamp: Long)
+
+    @Query("SELECT * FROM routines WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun getDeletedRoutines(): Flow<List<Routine>>
+
+    @Query("UPDATE routines SET deletedAt = NULL WHERE id = :routineId")
+    suspend fun restoreRoutine(routineId: Long)
+
+    @Query("DELETE FROM routines WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
+    suspend fun purgeExpiredRoutines(cutoff: Long)
 
     @Query("SELECT * FROM routine_items WHERE routineId = :routineId ORDER BY orderIndex ASC")
     fun getItemsForRoutine(routineId: Long): Flow<List<RoutineItem>>

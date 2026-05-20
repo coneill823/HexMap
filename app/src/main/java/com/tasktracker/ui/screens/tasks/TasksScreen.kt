@@ -43,6 +43,10 @@ fun TasksScreen(viewModel: TasksViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val editingRoutineId by viewModel.editingRoutineId.collectAsStateWithLifecycle()
     var selectedTabIndex by remember { mutableStateOf(0) }
+    var showAddRoutineDialog by remember { mutableStateOf(false) }
+    var taskToDelete by remember { mutableStateOf<TaskWithTags?>(null) }
+    var routineToDelete by remember { mutableStateOf<RoutineWithProgress?>(null) }
+    var routineItemToDelete by remember { mutableStateOf<com.tasktracker.data.database.entities.RoutineItem?>(null) }
 
     // Auto-switch to Routines tab when editingRoutineId becomes non-null
     LaunchedEffect(editingRoutineId) {
@@ -69,10 +73,14 @@ fun TasksScreen(viewModel: TasksViewModel) {
             )
         },
         floatingActionButton = {
-            if (selectedTabIndex == 0) {
-                FloatingActionButton(onClick = { viewModel.showAddTaskDialog() }) {
+            when (selectedTabIndex) {
+                0 -> FloatingActionButton(onClick = { viewModel.showAddTaskDialog() }) {
                     Icon(Icons.Default.Add, contentDescription = "Add Task")
                 }
+                1 -> FloatingActionButton(onClick = { showAddRoutineDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Routine")
+                }
+                else -> {}
             }
         }
     ) { padding ->
@@ -114,7 +122,7 @@ fun TasksScreen(viewModel: TasksViewModel) {
                     onSelectTag = viewModel::selectTag,
                     onToggleComplete = viewModel::toggleTaskComplete,
                     onEdit = viewModel::showEditDialog,
-                    onDelete = viewModel::deleteTask
+                    onDelete = { taskToDelete = it }
                 )
                 1 -> RoutinesTab(
                     routines = state.routines,
@@ -123,8 +131,9 @@ fun TasksScreen(viewModel: TasksViewModel) {
                         viewModel.toggleRoutineItemComplete(routineId, itemId, completed)
                     },
                     onEditItem = viewModel::showEditRoutineItemDialog,
-                    onDeleteItem = viewModel::deleteRoutineItem,
-                    onDeleteRoutine = { viewModel.deleteRoutine(it.routine) },
+                    onDeleteItem = { item -> routineItemToDelete = item },
+                    onDeleteRoutine = { routineToDelete = it },
+                    onEditRoutine = { viewModel.showEditRoutineDialog(it.routine) },
                     onReorderItem = viewModel::reorderItem
                 )
             }
@@ -174,6 +183,72 @@ fun TasksScreen(viewModel: TasksViewModel) {
             onNext = viewModel::sessionNext,
             onFinish = viewModel::sessionFinish,
             onDismiss = viewModel::dismissSession
+        )
+    }
+
+    if (showAddRoutineDialog) {
+        com.tasktracker.ui.components.AddRoutineDialog(
+            onDismiss = { showAddRoutineDialog = false },
+            onConfirm = { routine, items, recurrence ->
+                viewModel.addRoutine(routine, items, recurrence)
+                showAddRoutineDialog = false
+            }
+        )
+    }
+
+    state.editingRoutine?.let { routine ->
+        com.tasktracker.ui.components.EditRoutineDialog(
+            routine = routine,
+            onDismiss = viewModel::dismissDialogs,
+            onConfirm = viewModel::saveEditedRoutine
+        )
+    }
+
+    // Task delete confirmation
+    taskToDelete?.let { task ->
+        AlertDialog(
+            onDismissRequest = { taskToDelete = null },
+            title = { Text("Delete Task") },
+            text = { Text("Delete \"${task.task.title}\"?") },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.deleteTask(task); taskToDelete = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { taskToDelete = null }) { Text("Cancel") } }
+        )
+    }
+
+    // Routine delete confirmation
+    routineToDelete?.let { routine ->
+        AlertDialog(
+            onDismissRequest = { routineToDelete = null },
+            title = { Text("Delete Routine") },
+            text = { Text("Delete \"${routine.routine.name}\"? It can be recovered from Options for 7 days.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.deleteRoutine(routine.routine); routineToDelete = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { routineToDelete = null }) { Text("Cancel") } }
+        )
+    }
+
+    // Routine item delete confirmation
+    routineItemToDelete?.let { item ->
+        AlertDialog(
+            onDismissRequest = { routineItemToDelete = null },
+            title = { Text("Remove Item") },
+            text = { Text("Remove \"${item.title}\" from this routine?") },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.deleteRoutineItem(item); routineItemToDelete = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { routineItemToDelete = null }) { Text("Cancel") } }
         )
     }
 }
@@ -274,6 +349,7 @@ private fun RoutinesTab(
     onEditItem: (RoutineItem) -> Unit,
     onDeleteItem: (RoutineItem) -> Unit,
     onDeleteRoutine: (RoutineWithProgress) -> Unit,
+    onEditRoutine: (RoutineWithProgress) -> Unit,
     onReorderItem: (Long, Int, Int) -> Unit
 ) {
     if (routines.isEmpty()) {
@@ -320,6 +396,7 @@ private fun RoutinesTab(
                 onEditItem = onEditItem,
                 onDeleteItem = onDeleteItem,
                 onDeleteRoutine = { onDeleteRoutine(routine) },
+                onEditRoutine = { onEditRoutine(routine) },
                 onReorderItem = { fromIndex, toIndex ->
                     onReorderItem(routine.routine.id, fromIndex, toIndex)
                 }
@@ -340,6 +417,7 @@ private fun RoutineManagementCard(
     onEditItem: (RoutineItem) -> Unit,
     onDeleteItem: (RoutineItem) -> Unit,
     onDeleteRoutine: () -> Unit,
+    onEditRoutine: () -> Unit,
     onReorderItem: (fromIndex: Int, toIndex: Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(true) }
@@ -427,6 +505,16 @@ private fun RoutineManagementCard(
                         if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                         contentDescription = if (expanded) "Collapse" else "Expand",
                         modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Edit routine button
+                IconButton(onClick = onEditRoutine, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Edit Routine",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
 

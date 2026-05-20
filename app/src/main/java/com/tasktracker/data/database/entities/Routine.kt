@@ -9,5 +9,6 @@ data class Routine(
     val name: String,
     val description: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val timeMinutes: Int? = null
+    val timeMinutes: Int? = null,
+    val deletedAt: Long? = null
 )

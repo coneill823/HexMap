@@ -2,8 +2,6 @@ package com.tasktracker.ui.screens.calendar
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,19 +20,16 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
-import com.tasktracker.data.database.entities.Tag
 import com.tasktracker.data.models.RoutineWithProgress
 import com.tasktracker.data.models.TaskWithTags
-import com.tasktracker.ui.components.AddItemToRoutineDialog
 import com.tasktracker.ui.components.AddRoutineDialog
 import com.tasktracker.ui.components.AddTaskDialog
 import com.tasktracker.ui.components.EditRoutineItemDialog
+import com.tasktracker.ui.components.SessionOverlayDialog
 import com.tasktracker.ui.components.formatTime
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
@@ -57,7 +52,6 @@ private sealed class TimelineEntry {
 @Composable
 fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var showAddItemForRoutine by remember { mutableStateOf<RoutineWithProgress?>(null) }
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
     Scaffold(
@@ -66,14 +60,7 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
                 title = { Text(if (selectedTabIndex == 0) "Today" else "Calendar") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
-                ),
-                actions = {
-                    if (selectedTabIndex == 1) {
-                        IconButton(onClick = { viewModel.showAddRoutineDialog() }) {
-                            Icon(Icons.Default.PlaylistAdd, contentDescription = "Add Routine")
-                        }
-                    }
-                }
+                )
             )
         },
         floatingActionButton = {
@@ -106,17 +93,12 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
             when (selectedTabIndex) {
                 0 -> TodayTab(
                     state = state,
-                    onToggleTask = { viewModel.toggleTaskComplete(it) },
-                    onDeleteTask = { viewModel.deleteTask(it) },
-                    onToggleRoutineItem = { routineId, itemId, currentlyCompleted ->
-                        viewModel.toggleRoutineItemComplete(routineId, itemId, state.selectedDate, currentlyCompleted)
-                    },
-                    onNavigateToRoutine = onNavigateToRoutine
+                    onNavigateToRoutine = onNavigateToRoutine,
+                    onStartSession = { viewModel.startSession(it) }
                 )
                 1 -> CalendarTab(
                     state = state,
-                    viewModel = viewModel,
-                    onShowAddItem = { showAddItemForRoutine = it }
+                    viewModel = viewModel
                 )
             }
         }
@@ -140,21 +122,20 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
         )
     }
 
-    showAddItemForRoutine?.let { routine ->
-        AddItemToRoutineDialog(
-            onDismiss = { showAddItemForRoutine = null },
-            onConfirm = { item ->
-                viewModel.addItemToRoutine(routine.routine.id, item)
-                showAddItemForRoutine = null
-            }
-        )
-    }
-
     state.editingRoutineItem?.let { item ->
         EditRoutineItemDialog(
             item = item,
             onDismiss = viewModel::dismissDialogs,
             onConfirm = viewModel::saveEditedRoutineItem
+        )
+    }
+
+    state.sessionState?.let { session ->
+        SessionOverlayDialog(
+            state = session,
+            onNext = viewModel::sessionNext,
+            onFinish = viewModel::sessionFinish,
+            onDismiss = viewModel::dismissSession
         )
     }
 }
@@ -166,10 +147,8 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
 @Composable
 private fun TodayTab(
     state: CalendarUiState,
-    onToggleTask: (TaskWithTags) -> Unit,
-    onDeleteTask: (TaskWithTags) -> Unit,
-    onToggleRoutineItem: (routineId: Long, itemId: Long, currentlyCompleted: Boolean) -> Unit,
-    onNavigateToRoutine: (Long) -> Unit
+    onNavigateToRoutine: (Long) -> Unit,
+    onStartSession: (RoutineWithProgress) -> Unit
 ) {
     val now = LocalTime.now()
     val currentMinutes = now.hour * 60 + now.minute
@@ -234,17 +213,13 @@ private fun TodayTab(
                 }
                 is TimelineEntry.TaskEntry -> {
                     TimelineTaskRow(
-                        taskWithTags = entry.taskWithTags,
-                        onToggle = { onToggleTask(entry.taskWithTags) },
-                        onDelete = { onDeleteTask(entry.taskWithTags) }
+                        taskWithTags = entry.taskWithTags
                     )
                 }
                 is TimelineEntry.RoutineEntry -> {
                     TimelineRoutineCard(
                         routineWithProgress = entry.routineWithProgress,
-                        onToggleItem = { itemId, completed ->
-                            onToggleRoutineItem(entry.routineWithProgress.routine.id, itemId, completed)
-                        },
+                        onStartSession = { onStartSession(entry.routineWithProgress) },
                         onNavigateToRoutine = { onNavigateToRoutine(entry.routineWithProgress.routine.id) }
                     )
                 }
@@ -364,9 +339,7 @@ private fun CurrentTimeDivider(currentMinutes: Int) {
 
 @Composable
 private fun TimelineTaskRow(
-    taskWithTags: TaskWithTags,
-    onToggle: () -> Unit,
-    onDelete: () -> Unit
+    taskWithTags: TaskWithTags
 ) {
     val task = taskWithTags.task
     Row(
@@ -397,12 +370,6 @@ private fun TimelineTaskRow(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Checkbox(
-                    checked = task.isCompleted,
-                    onCheckedChange = { onToggle() },
-                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.size(36.dp)
-                )
                 Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
                     Text(
                         task.title,
@@ -448,12 +415,12 @@ private fun TimelineTaskRow(
                         }
                     }
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                if (task.timeMinutes != null) {
+                    Text(
+                        formatTime(task.timeMinutes),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 4.dp)
                     )
                 }
             }
@@ -464,7 +431,7 @@ private fun TimelineTaskRow(
 @Composable
 private fun TimelineRoutineCard(
     routineWithProgress: RoutineWithProgress,
-    onToggleItem: (itemId: Long, currentlyCompleted: Boolean) -> Unit,
+    onStartSession: () -> Unit,
     onNavigateToRoutine: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(true) }
@@ -524,6 +491,18 @@ private fun TimelineRoutineCard(
                         )
                         Spacer(Modifier.width(4.dp))
                     }
+                    // Play button to start session
+                    IconButton(
+                        onClick = onStartSession,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Start Session",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     // Edit button → navigate to Routines tab
                     IconButton(
                         onClick = onNavigateToRoutine,
@@ -574,31 +553,14 @@ private fun TimelineRoutineCard(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 1.dp),
+                                    .padding(vertical = 1.dp, horizontal = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Checkbox(
-                                    checked = itemWithCompletion.isCompleted,
-                                    onCheckedChange = {
-                                        onToggleItem(itemWithCompletion.item.id, itemWithCompletion.isCompleted)
-                                    },
-                                    modifier = Modifier.size(32.dp),
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = MaterialTheme.colorScheme.secondary
-                                    )
-                                )
                                 Text(
                                     itemWithCompletion.item.title,
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.weight(1f).padding(start = 4.dp),
-                                    textDecoration = if (itemWithCompletion.isCompleted)
-                                        TextDecoration.LineThrough
-                                    else
-                                        TextDecoration.None,
-                                    color = if (itemWithCompletion.isCompleted)
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    else
-                                        MaterialTheme.colorScheme.onSurface
+                                    modifier = Modifier.weight(1f),
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 if (itemWithCompletion.item.timeMinutes != null) {
                                     Text(
@@ -647,31 +609,36 @@ private fun EmptyTodayContent() {
 @Composable
 private fun CalendarTab(
     state: CalendarUiState,
-    viewModel: CalendarViewModel,
-    onShowAddItem: (RoutineWithProgress) -> Unit
+    viewModel: CalendarViewModel
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
         item {
-            MonthCalendar(
-                currentMonth = state.currentMonth,
-                selectedDate = state.selectedDate,
-                onDateSelected = viewModel::selectDate,
-                onPrevMonth = { viewModel.navigateMonth(-1) },
-                onNextMonth = { viewModel.navigateMonth(1) }
-            )
-        }
-
-        item {
-            val formatter = DateTimeFormatter.ofPattern("EEEE, MMMM d")
-            Text(
-                state.selectedDate.format(formatter),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                color = MaterialTheme.colorScheme.primary
-            )
+            // Day navigation bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { viewModel.selectDate(state.selectedDate.minusDays(1)) }) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous day")
+                }
+                Text(
+                    text = state.selectedDate.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                IconButton(onClick = { viewModel.selectDate(state.selectedDate.plusDays(1)) }) {
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Next day")
+                }
+            }
         }
 
         if (state.tasks.isNotEmpty()) {
@@ -690,6 +657,7 @@ private fun CalendarTab(
             items(state.routines, key = { "routine_${it.routine.id}" }) { routineWithProgress ->
                 RoutineCard(
                     routineWithProgress = routineWithProgress,
+                    onStartSession = { viewModel.startSession(routineWithProgress) },
                     onToggleItem = { itemId, currentlyCompleted ->
                         viewModel.toggleRoutineItemComplete(
                             routineWithProgress.routine.id,
@@ -698,7 +666,6 @@ private fun CalendarTab(
                             currentlyCompleted
                         )
                     },
-                    onAddItem = { onShowAddItem(routineWithProgress) },
                     onDeleteItem = { item -> viewModel.deleteRoutineItem(item) },
                     onDeleteRoutine = { viewModel.deleteRoutine(routineWithProgress.routine) },
                     onEditItem = { item -> viewModel.showEditRoutineItemDialog(item) }
@@ -715,115 +682,6 @@ private fun CalendarTab(
 // ---------------------------------------------------------------------------
 // Shared composables
 // ---------------------------------------------------------------------------
-
-@Composable
-private fun MonthCalendar(
-    currentMonth: YearMonth,
-    selectedDate: LocalDate,
-    onDateSelected: (LocalDate) -> Unit,
-    onPrevMonth: () -> Unit,
-    onNextMonth: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(2.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onPrevMonth) {
-                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month")
-                }
-                Text(
-                    currentMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy")),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                IconButton(onClick = onNextMonth) {
-                    Icon(Icons.Default.ChevronRight, contentDescription = "Next month")
-                }
-            }
-
-            Row(modifier = Modifier.fillMaxWidth()) {
-                val days = listOf("M", "T", "W", "T", "F", "S", "S")
-                days.forEach { day ->
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Text(
-                            day,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(4.dp))
-
-            val firstDay = currentMonth.atDay(1)
-            val firstDayOffset = (firstDay.dayOfWeek.value - 1) % 7
-            val daysInMonth = currentMonth.lengthOfMonth()
-            val today = LocalDate.now()
-
-            val cells = firstDayOffset + daysInMonth
-            val rows = (cells + 6) / 7
-
-            for (row in 0 until rows) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    for (col in 0 until 7) {
-                        val cellIndex = row * 7 + col
-                        val dayNum = cellIndex - firstDayOffset + 1
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (dayNum in 1..daysInMonth) {
-                                val date = currentMonth.atDay(dayNum)
-                                val isSelected = date == selectedDate
-                                val isToday = date == today
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(34.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            when {
-                                                isSelected -> MaterialTheme.colorScheme.primary
-                                                else -> Color.Transparent
-                                            }
-                                        )
-                                        .border(
-                                            width = if (isToday && !isSelected) 1.5.dp else 0.dp,
-                                            color = if (isToday && !isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                            shape = CircleShape
-                                        )
-                                        .clickable { onDateSelected(date) },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        dayNum.toString(),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = when {
-                                            isSelected -> MaterialTheme.colorScheme.onPrimary
-                                            isToday -> MaterialTheme.colorScheme.primary
-                                            else -> MaterialTheme.colorScheme.onSurface
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun SectionHeader(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
@@ -941,8 +799,8 @@ private fun TaskCard(
 @Composable
 private fun RoutineCard(
     routineWithProgress: RoutineWithProgress,
+    onStartSession: () -> Unit,
     onToggleItem: (Long, Boolean) -> Unit,
-    onAddItem: () -> Unit,
     onDeleteItem: (RoutineItem) -> Unit,
     onDeleteRoutine: () -> Unit,
     onEditItem: (RoutineItem) -> Unit = {}
@@ -1000,6 +858,14 @@ private fun RoutineCard(
                         }
                     }
                 }
+                IconButton(onClick = onStartSession, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Start Session",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -1037,14 +903,6 @@ private fun RoutineCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
-                }
-                TextButton(
-                    onClick = onAddItem,
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Add Task", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }

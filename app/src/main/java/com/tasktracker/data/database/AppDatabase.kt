@@ -63,6 +63,12 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE routines ADD COLUMN deletedAt INTEGER")
+    }
+}
+
 @Database(
     entities = [
         Tag::class,
@@ -74,7 +80,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         RecurrenceRule::class,
         RoutineSessionLog::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -95,7 +101,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "task_tracker_db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }

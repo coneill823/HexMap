@@ -32,6 +32,7 @@ data class TasksUiState(
     val showManageTagsDialog: Boolean = false,
     val editingTask: TaskWithTags? = null,
     val editingRoutineItem: RoutineItem? = null,
+    val editingRoutine: com.tasktracker.data.database.entities.Routine? = null,
     val sessionState: SessionState? = null
 )
 
@@ -40,7 +41,8 @@ private data class TasksConfig(
     val showAddTask: Boolean,
     val showManageTags: Boolean,
     val editingTask: TaskWithTags?,
-    val editingRoutineItem: RoutineItem?
+    val editingRoutineItem: RoutineItem?,
+    val editingRoutine: com.tasktracker.data.database.entities.Routine? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -55,6 +57,7 @@ class TasksViewModel(
     private val _showManageTags = MutableStateFlow(false)
     private val _editingTask = MutableStateFlow<TaskWithTags?>(null)
     private val _editingRoutineItem = MutableStateFlow<RoutineItem?>(null)
+    private val _editingRoutine = MutableStateFlow<com.tasktracker.data.database.entities.Routine?>(null)
     private val _sessionState = MutableStateFlow<SessionState?>(null)
     private val _editingRoutineId = MutableStateFlow<Long?>(null)
     val editingRoutineId: StateFlow<Long?> = _editingRoutineId.asStateFlow()
@@ -65,9 +68,9 @@ class TasksViewModel(
         _selectedTagId,
         _showAddTask,
         _showManageTags,
-        combine(_editingTask, _editingRoutineItem) { et, eri -> et to eri }
-    ) { selectedTag, showAdd, showManage, (editing, editingItem) ->
-        TasksConfig(selectedTag, showAdd, showManage, editing, editingItem)
+        combine(_editingTask, _editingRoutineItem, _editingRoutine) { et, eri, er -> Triple(et, eri, er) }
+    ) { selectedTag, showAdd, showManage, (editing, editingItem, editingRoutine) ->
+        TasksConfig(selectedTag, showAdd, showManage, editing, editingItem, editingRoutine)
     }.flatMapLatest { config ->
         val today = LocalDate.now().toEpochDay()
         combine(
@@ -99,11 +102,14 @@ class TasksViewModel(
                 showManageTagsDialog = config.showManageTags,
                 editingTask = config.editingTask,
                 editingRoutineItem = config.editingRoutineItem,
+                editingRoutine = config.editingRoutine,
                 sessionState = _sessionState.value
             )
         }
     }.combine(_sessionState) { uiState, session ->
         uiState.copy(sessionState = session)
+    }.combine(_editingRoutine) { uiState, editingRoutine ->
+        uiState.copy(editingRoutine = editingRoutine)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TasksUiState())
 
     // Task management
@@ -117,6 +123,7 @@ class TasksViewModel(
         _showManageTags.value = false
         _editingTask.value = null
         _editingRoutineItem.value = null
+        _editingRoutine.value = null
     }
 
     fun saveTask(task: Task, tagIds: List<Long>, recurrence: com.tasktracker.ui.components.RecurrenceDraft) {
@@ -139,6 +146,30 @@ class TasksViewModel(
     fun deleteTag(tag: Tag) { viewModelScope.launch { taskRepo.deleteTag(tag) } }
 
     // Routine management
+    fun showEditRoutineDialog(routine: com.tasktracker.data.database.entities.Routine) {
+        _editingRoutine.value = routine
+    }
+
+    fun saveEditedRoutine(routine: com.tasktracker.data.database.entities.Routine) {
+        viewModelScope.launch {
+            routineRepo.updateRoutine(routine)
+            _editingRoutine.value = null
+        }
+    }
+
+    fun addRoutine(
+        routine: com.tasktracker.data.database.entities.Routine,
+        items: List<com.tasktracker.data.database.entities.RoutineItem>,
+        recurrence: com.tasktracker.ui.components.RecurrenceDraft
+    ) {
+        viewModelScope.launch {
+            val routineId = routineRepo.saveRoutine(routine)
+            items.forEachIndexed { index, item ->
+                routineRepo.saveRoutineItem(item.copy(routineId = routineId, orderIndex = index))
+            }
+        }
+    }
+
     fun showEditRoutineItemDialog(item: RoutineItem) { _editingRoutineItem.value = item }
 
     fun saveRoutineItem(item: RoutineItem) {
@@ -159,7 +190,7 @@ class TasksViewModel(
     fun clearRoutineToEdit() { _editingRoutineId.value = null }
 
     fun deleteRoutine(routine: com.tasktracker.data.database.entities.Routine) {
-        viewModelScope.launch { routineRepo.deleteRoutine(routine) }
+        viewModelScope.launch { routineRepo.softDeleteRoutine(routine.id) }
     }
 
     fun reorderItem(routineId: Long, fromIndex: Int, toIndex: Int) {
@@ -236,6 +267,12 @@ class TasksViewModel(
                 )
             }
             sessionLogRepo?.saveLogs(logs)
+
+            // Auto-mark all completed items as done for today
+            val today = LocalDate.now().toEpochDay()
+            allCompleted.forEach { result ->
+                routineRepo.setItemCompletion(current.routine.routine.id, result.item.id, today, true)
+            }
 
             val averages = sessionLogRepo?.getAverageTimePerItem(current.routine.routine.id)
                 ?.associate { it.routineItemId to it.avgSeconds }
