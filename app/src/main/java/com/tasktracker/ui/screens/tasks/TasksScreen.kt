@@ -420,7 +420,7 @@ private fun RoutineManagementCard(
     onEditRoutine: () -> Unit,
     onReorderItem: (fromIndex: Int, toIndex: Int) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(true) }
+    var expanded by remember { mutableStateOf(false) }
     val items = routine.items
 
     // Drag-to-reorder state
@@ -770,69 +770,79 @@ private fun TaskListItem(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 4.dp)
-                ) {
-                    if (task.timeMinutes != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.AccessTime,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                formatTime(task.timeMinutes),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    // Due date badge
-                    if (task.dueDate != null) {
-                        val dueDate = java.time.LocalDate.ofEpochDay(task.dueDate)
-                        val today = LocalDate.now()
-                        val dueColor = when {
-                            dueDate.isBefore(today) -> MaterialTheme.colorScheme.error
-                            dueDate == today -> MaterialTheme.colorScheme.tertiary
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.CalendarToday,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = dueColor
-                            )
-                            Text(
-                                "Due ${dueDate.format(DateTimeFormatter.ofPattern("MMM d"))}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = dueColor
-                            )
-                        }
-                    }
-                    taskWithTags.tags.forEach { tag ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(
-                                    Color(android.graphics.Color.parseColor(tag.colorHex))
-                                        .copy(alpha = 0.25f)
+                // Time + due date on one line
+                if (task.timeMinutes != null || task.dueDate != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 3.dp)
+                    ) {
+                        if (task.timeMinutes != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.AccessTime,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                tag.name,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Color(android.graphics.Color.parseColor(tag.colorHex))
-                            )
+                                Text(
+                                    formatTime(task.timeMinutes),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (task.dueDate != null) {
+                            val dueDate = java.time.LocalDate.ofEpochDay(task.dueDate)
+                            val today = LocalDate.now()
+                            val dueColor = when {
+                                dueDate.isBefore(today) -> MaterialTheme.colorScheme.error
+                                dueDate == today -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.CalendarToday,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = dueColor
+                                )
+                                Text(
+                                    "Due ${dueDate.format(DateTimeFormatter.ofPattern("MMM d"))}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = dueColor
+                                )
+                            }
+                        }
+                    }
+                }
+                // Tags on a separate line
+                if (taskWithTags.tags.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        taskWithTags.tags.forEach { tag ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(
+                                        Color(android.graphics.Color.parseColor(tag.colorHex))
+                                            .copy(alpha = 0.25f)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    tag.name,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color(android.graphics.Color.parseColor(tag.colorHex))
+                                )
+                            }
                         }
                     }
                 }

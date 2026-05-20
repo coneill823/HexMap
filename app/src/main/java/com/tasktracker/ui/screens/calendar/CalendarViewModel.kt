@@ -3,6 +3,7 @@ package com.tasktracker.ui.screens.calendar
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.tasktracker.data.database.entities.RecurrenceRule
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
 import com.tasktracker.data.database.entities.RoutineSessionLog
@@ -32,6 +33,8 @@ data class CalendarUiState(
     val currentMonth: YearMonth = YearMonth.now(),
     val tasks: List<TaskWithTags> = emptyList(),
     val routines: List<RoutineWithProgress> = emptyList(),
+    val allRoutines: List<RoutineWithProgress> = emptyList(),
+    val routineRules: Map<Long, RecurrenceRule> = emptyMap(),
     val availableTags: List<Tag> = emptyList(),
     val showAddTaskDialog: Boolean = false,
     val showAddRoutineDialog: Boolean = false,
@@ -73,13 +76,32 @@ class CalendarViewModel(
         CalendarConfig(date, month, showAdd, showRoutine, editing, editingItem)
     }.flatMapLatest { config ->
         val epochDay = config.selectedDate.toEpochDay()
+        val allRulesFlow: Flow<List<RecurrenceRule>> =
+            recurrenceRepo?.getAllRules() ?: flowOf(emptyList())
+
         combine(
-            taskRepo.getTasksWithTagsByDate(epochDay),
-            routineRepo.getAllRoutinesWithItems(),
-            routineRepo.getCompletionsForDate(epochDay),
-            taskRepo.getAllTags()
-        ) { tasks, routines, completions, tags ->
-            val routinesWithProgress = routines.map { rwi ->
+            combine(
+                taskRepo.getTasksWithTagsByDate(epochDay),
+                routineRepo.getAllRoutinesWithItems(),
+                routineRepo.getCompletionsForDate(epochDay)
+            ) { tasks, routines, completions -> Triple(tasks, routines, completions) },
+            combine(
+                taskRepo.getAllTags(),
+                allRulesFlow,
+                taskRepo.getAllTasksWithTags()
+            ) { tags, rules, allTasks -> Triple(tags, rules, allTasks) }
+        ) { (dateTasksRaw, routinesRaw, completions), (tags, rules, allTasksRaw) ->
+
+            // Build rule lookup maps
+            val routineRulesMap = rules
+                .filter { it.ownerType == "routine" }
+                .associateBy { it.ownerId }
+            val taskRulesMap = rules
+                .filter { it.ownerType == "task" }
+                .associateBy { it.ownerId }
+
+            // Build all routines with progress (unfiltered)
+            val allRoutinesWithProgress = routinesRaw.map { rwi ->
                 RoutineWithProgress(
                     routine = rwi.routine,
                     items = rwi.items.sortedBy { it.orderIndex }.map { item ->
@@ -91,14 +113,42 @@ class CalendarViewModel(
                                     it.isCompleted
                             }
                         )
-                    }
+                    },
+                    tags = rwi.tags
                 )
             }
+
+            // Filter routines for selected date using recurrence rules
+            val filteredRoutines = allRoutinesWithProgress.filter { rwp ->
+                val rule = routineRulesMap[rwp.routine.id]
+                rule?.occursOn(config.selectedDate) ?: true
+            }
+
+            // Tasks from date-specific query (scheduledDate == epochDay)
+            val dateTaskIds = dateTasksRaw.map { it.task.id }.toSet()
+
+            // Also include recurring tasks that occur on selectedDate and have no scheduledDate
+            val recurringTasksForDate = allTasksRaw.filter { twt ->
+                val task = twt.task
+                if (task.id in dateTaskIds) return@filter false // already included
+                val taskRule = taskRulesMap[task.id] ?: return@filter false
+                val hasNoScheduledDate = task.scheduledDate == null || task.scheduledDate == 0L
+                hasNoScheduledDate && taskRule.occursOn(config.selectedDate)
+            }
+
+            // Merge and deduplicate by task ID
+            val mergedTasksById = LinkedHashMap<Long, TaskWithTags>()
+            dateTasksRaw.forEach { mergedTasksById[it.task.id] = it }
+            recurringTasksForDate.forEach { mergedTasksById[it.task.id] = it }
+            val filteredTasks = mergedTasksById.values.toList()
+
             CalendarUiState(
                 selectedDate = config.selectedDate,
                 currentMonth = config.currentMonth,
-                tasks = tasks,
-                routines = routinesWithProgress,
+                tasks = filteredTasks,
+                routines = filteredRoutines,
+                allRoutines = allRoutinesWithProgress,
+                routineRules = routineRulesMap,
                 availableTags = tags,
                 showAddTaskDialog = config.showAddTask,
                 showAddRoutineDialog = config.showAddRoutine,

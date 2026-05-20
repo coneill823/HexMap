@@ -23,6 +23,12 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
 
+data class TaskPlayState(
+    val task: Task,
+    val timerSeconds: Int = 0,
+    val isFinished: Boolean = false
+)
+
 data class TasksUiState(
     val tasks: List<TaskWithTags> = emptyList(),
     val tags: List<Tag> = emptyList(),
@@ -33,7 +39,8 @@ data class TasksUiState(
     val editingTask: TaskWithTags? = null,
     val editingRoutineItem: RoutineItem? = null,
     val editingRoutine: com.tasktracker.data.database.entities.Routine? = null,
-    val sessionState: SessionState? = null
+    val sessionState: SessionState? = null,
+    val taskPlayState: TaskPlayState? = null
 )
 
 private data class TasksConfig(
@@ -62,7 +69,11 @@ class TasksViewModel(
     private val _editingRoutineId = MutableStateFlow<Long?>(null)
     val editingRoutineId: StateFlow<Long?> = _editingRoutineId.asStateFlow()
 
+    private val _taskPlayState = MutableStateFlow<TaskPlayState?>(null)
+    val taskPlayState: StateFlow<TaskPlayState?> = _taskPlayState.asStateFlow()
+
     private var timerJob: Job? = null
+    private var taskTimerJob: Job? = null
 
     val uiState: StateFlow<TasksUiState> = combine(
         _selectedTagId,
@@ -110,6 +121,8 @@ class TasksViewModel(
         uiState.copy(sessionState = session)
     }.combine(_editingRoutine) { uiState, editingRoutine ->
         uiState.copy(editingRoutine = editingRoutine)
+    }.combine(_taskPlayState) { uiState, taskPlay ->
+        uiState.copy(taskPlayState = taskPlay)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TasksUiState())
 
     // Task management
@@ -289,6 +302,33 @@ class TasksViewModel(
     fun dismissSession() {
         timerJob?.cancel()
         _sessionState.value = null
+    }
+
+    // Task play (single-task timer)
+    fun startTaskPlay(task: Task) {
+        _taskPlayState.value = TaskPlayState(task = task)
+        taskTimerJob = viewModelScope.launch {
+            while (true) {
+                delay(1000L)
+                val current = _taskPlayState.value ?: break
+                if (current.isFinished) break
+                _taskPlayState.value = current.copy(timerSeconds = current.timerSeconds + 1)
+            }
+        }
+    }
+
+    fun finishTaskPlay() {
+        taskTimerJob?.cancel()
+        val current = _taskPlayState.value ?: return
+        viewModelScope.launch {
+            taskRepo.toggleTaskComplete(current.task.copy(isCompleted = false))
+            _taskPlayState.value = current.copy(isFinished = true)
+        }
+    }
+
+    fun dismissTaskPlay() {
+        taskTimerJob?.cancel()
+        _taskPlayState.value = null
     }
 
     class Factory(
