@@ -270,7 +270,7 @@ private fun TodayTab(
             scheduledTasks.forEach { twt ->
                 val timeMin = twt.task.timeMinutes ?: return@forEach
                 if (timeMin < START_HOUR * 60 || timeMin >= END_HOUR * 60) return@forEach
-                val yOffsetDp = ((timeMin - START_HOUR * 60) / 60f) * hourHeightDp
+                val yOffsetDp = hourHeightDp * ((timeMin - START_HOUR * 60) / 60f)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -285,7 +285,7 @@ private fun TodayTab(
             scheduledRoutines.forEach { rwp ->
                 val timeMin = rwp.routine.timeMinutes ?: return@forEach
                 if (timeMin < START_HOUR * 60 || timeMin >= END_HOUR * 60) return@forEach
-                val yOffsetDp = ((timeMin - START_HOUR * 60) / 60f) * hourHeightDp
+                val yOffsetDp = hourHeightDp * ((timeMin - START_HOUR * 60) / 60f)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -298,7 +298,7 @@ private fun TodayTab(
 
             // 5. Current time indicator (red line)
             if (currentMinutes >= START_HOUR * 60 && currentMinutes < END_HOUR * 60) {
-                val yOffsetDp = ((currentMinutes - START_HOUR * 60) / 60f) * hourHeightDp
+                val yOffsetDp = hourHeightDp * ((currentMinutes - START_HOUR * 60) / 60f)
                 val errorColor = MaterialTheme.colorScheme.error
                 Canvas(
                     modifier = Modifier
