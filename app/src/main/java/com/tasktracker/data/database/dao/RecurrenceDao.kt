@@ -12,6 +12,9 @@ interface RecurrenceDao {
     @Query("SELECT * FROM recurrence_rules WHERE ownerType = :ownerType")
     fun getAllRulesForType(ownerType: String): Flow<List<RecurrenceRule>>
 
+    @Query("SELECT * FROM recurrence_rules")
+    fun getAllRules(): Flow<List<RecurrenceRule>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRule(rule: RecurrenceRule): Long
 

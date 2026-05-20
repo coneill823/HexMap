@@ -2,6 +2,7 @@ package com.tasktracker.data.models
 
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
+import com.tasktracker.data.database.entities.Tag
 
 enum class OverviewGranularity { YEAR, MONTH, WEEK }
 
@@ -26,7 +27,8 @@ data class RoutineItemWithCompletion(
 
 data class RoutineWithProgress(
     val routine: Routine,
-    val items: List<RoutineItemWithCompletion>
+    val items: List<RoutineItemWithCompletion>,
+    val tags: List<Tag> = emptyList()
 ) {
     val completedCount: Int get() = items.count { it.isCompleted }
     val totalCount: Int get() = items.size

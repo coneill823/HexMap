@@ -5,10 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.tasktracker.data.database.AppDatabase
+import com.tasktracker.data.database.dao.TaskSessionLogDao
 import com.tasktracker.data.repository.RecurrenceRepository
 import com.tasktracker.data.repository.RoutineRepository
 import com.tasktracker.data.repository.SessionLogRepository
 import com.tasktracker.data.repository.TaskRepository
+import com.tasktracker.data.repository.TaskSessionLogRepository
 import com.tasktracker.data.repository.ThemeRepository
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -22,6 +24,7 @@ class TaskTrackerApplication : Application() {
     val routineRepository by lazy { RoutineRepository(database.routineDao()) }
     val recurrenceRepository by lazy { RecurrenceRepository(database.recurrenceDao()) }
     val sessionLogRepository by lazy { SessionLogRepository(database.sessionLogDao()) }
+    val taskSessionLogRepository by lazy { TaskSessionLogRepository(database.taskSessionLogDao()) }
     val themeRepository by lazy { ThemeRepository(this) }
 
     override fun onCreate() {

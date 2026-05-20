@@ -11,6 +11,8 @@ class RecurrenceRepository(private val recurrenceDao: RecurrenceDao) {
     fun getAllRulesForType(ownerType: String): Flow<List<RecurrenceRule>> =
         recurrenceDao.getAllRulesForType(ownerType)
 
+    fun getAllRules(): Flow<List<RecurrenceRule>> = recurrenceDao.getAllRules()
+
     suspend fun saveRule(rule: RecurrenceRule) {
         recurrenceDao.deleteRule(rule.ownerId, rule.ownerType)
         recurrenceDao.insertRule(rule)

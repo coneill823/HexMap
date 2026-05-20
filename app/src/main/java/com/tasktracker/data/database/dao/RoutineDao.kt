@@ -4,6 +4,8 @@ import androidx.room.*
 import com.tasktracker.data.database.entities.DailyRoutineCompletion
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
+import com.tasktracker.data.database.entities.RoutineTag
+import com.tasktracker.data.database.entities.Tag
 import com.tasktracker.data.models.RoutineWithItems
 import kotlinx.coroutines.flow.Flow
 
@@ -95,4 +97,13 @@ interface RoutineDao {
 
     @Query("SELECT * FROM routine_items WHERE routineId = :routineId ORDER BY orderIndex ASC")
     suspend fun getItemsForRoutineOnce(routineId: Long): List<RoutineItem>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRoutineTag(tag: RoutineTag)
+
+    @Query("DELETE FROM routine_tags WHERE routineId = :routineId")
+    suspend fun clearRoutineTags(routineId: Long)
+
+    @Query("SELECT tags.* FROM tags INNER JOIN routine_tags ON tags.id = routine_tags.tagId WHERE routine_tags.routineId = :routineId")
+    fun getTagsForRoutine(routineId: Long): Flow<List<Tag>>
 }

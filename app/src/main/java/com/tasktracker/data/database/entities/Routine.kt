@@ -10,5 +10,6 @@ data class Routine(
     val description: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val timeMinutes: Int? = null,
-    val deletedAt: Long? = null
+    val deletedAt: Long? = null,
+    val colorHex: String = "#9C71FF"
 )

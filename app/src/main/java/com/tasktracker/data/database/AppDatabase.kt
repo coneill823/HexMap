@@ -11,13 +11,16 @@ import com.tasktracker.data.database.dao.RoutineDao
 import com.tasktracker.data.database.dao.SessionLogDao
 import com.tasktracker.data.database.dao.TagDao
 import com.tasktracker.data.database.dao.TaskDao
+import com.tasktracker.data.database.dao.TaskSessionLogDao
 import com.tasktracker.data.database.entities.DailyRoutineCompletion
 import com.tasktracker.data.database.entities.RecurrenceRule
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
 import com.tasktracker.data.database.entities.RoutineSessionLog
+import com.tasktracker.data.database.entities.RoutineTag
 import com.tasktracker.data.database.entities.Tag
 import com.tasktracker.data.database.entities.Task
+import com.tasktracker.data.database.entities.TaskSessionLog
 import com.tasktracker.data.database.entities.TaskTag
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -69,6 +72,26 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     }
 }
 
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE routines ADD COLUMN colorHex TEXT NOT NULL DEFAULT '#9C71FF'")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS routine_tags (
+            routineId INTEGER NOT NULL,
+            tagId INTEGER NOT NULL,
+            PRIMARY KEY (routineId, tagId),
+            FOREIGN KEY (routineId) REFERENCES routines(id) ON DELETE CASCADE,
+            FOREIGN KEY (tagId) REFERENCES tags(id) ON DELETE CASCADE
+        )""")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS task_session_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            taskId INTEGER NOT NULL,
+            sessionId TEXT NOT NULL,
+            elapsedSeconds INTEGER NOT NULL,
+            dateEpochDay INTEGER NOT NULL
+        )""")
+    }
+}
+
 @Database(
     entities = [
         Tag::class,
@@ -78,9 +101,11 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         RoutineItem::class,
         DailyRoutineCompletion::class,
         RecurrenceRule::class,
-        RoutineSessionLog::class
+        RoutineSessionLog::class,
+        RoutineTag::class,
+        TaskSessionLog::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -89,6 +114,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun routineDao(): RoutineDao
     abstract fun recurrenceDao(): RecurrenceDao
     abstract fun sessionLogDao(): SessionLogDao
+    abstract fun taskSessionLogDao(): TaskSessionLogDao
 
     companion object {
         @Volatile
@@ -101,7 +127,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "task_tracker_db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -5,6 +5,7 @@ import androidx.room.Junction
 import androidx.room.Relation
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
+import com.tasktracker.data.database.entities.RoutineTag
 import com.tasktracker.data.database.entities.Tag
 import com.tasktracker.data.database.entities.Task
 import com.tasktracker.data.database.entities.TaskTag
@@ -29,5 +30,15 @@ data class RoutineWithItems(
         parentColumn = "id",
         entityColumn = "routineId"
     )
-    val items: List<RoutineItem>
+    val items: List<RoutineItem>,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "id",
+        associateBy = Junction(
+            value = RoutineTag::class,
+            parentColumn = "routineId",
+            entityColumn = "tagId"
+        )
+    )
+    val tags: List<Tag>
 )

@@ -4,6 +4,8 @@ import com.tasktracker.data.database.dao.RoutineDao
 import com.tasktracker.data.database.entities.DailyRoutineCompletion
 import com.tasktracker.data.database.entities.Routine
 import com.tasktracker.data.database.entities.RoutineItem
+import com.tasktracker.data.database.entities.RoutineTag
+import com.tasktracker.data.database.entities.Tag
 import com.tasktracker.data.models.RoutineWithItems
 import kotlinx.coroutines.flow.Flow
 
@@ -77,4 +79,11 @@ class RoutineRepository(private val routineDao: RoutineDao) {
 
     suspend fun getItemsForRoutine(routineId: Long): List<RoutineItem> =
         routineDao.getItemsForRoutineOnce(routineId)
+
+    suspend fun saveRoutineTags(routineId: Long, tagIds: List<Long>) {
+        routineDao.clearRoutineTags(routineId)
+        tagIds.forEach { tagId -> routineDao.insertRoutineTag(RoutineTag(routineId, tagId)) }
+    }
+
+    fun getTagsForRoutine(routineId: Long): Flow<List<Tag>> = routineDao.getTagsForRoutine(routineId)
 }
