@@ -1,12 +1,16 @@
 package com.tasktracker.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.tasktracker.data.database.entities.RecurrenceRule
 
@@ -123,23 +127,37 @@ fun RecurrencePickerSection(
                 Text(unitLabel, style = MaterialTheme.typography.bodySmall)
             }
 
-            // ── Weekly: day-of-week chips ─────────────────────────────────
+            // ── Weekly: day-of-week circle buttons ────────────────────────
             if (draft.frequency == "weekly") {
                 Text("Repeat on", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                val dayNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    dayNames.forEachIndexed { i, name ->
+                // First letters: M T W T F S S (Mon..Sun, bits 1,2,4,8,16,32,64)
+                val dayLetters = listOf("M", "T", "W", "T", "F", "S", "S")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    dayLetters.forEachIndexed { i, letter ->
                         val bit = 1 shl i
                         val mask = draft.dayOfWeekMask ?: 0
                         val selected = mask and bit != 0
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                val newMask = if (selected) mask and bit.inv() else mask or bit
-                                onDraftChange(draft.copy(dayOfWeekMask = if (newMask == 0) null else newMask))
-                            },
-                            label = { Text(name, style = MaterialTheme.typography.labelSmall) }
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                .clickable {
+                                    val newMask = if (selected) mask and bit.inv() else mask or bit
+                                    onDraftChange(draft.copy(dayOfWeekMask = if (newMask == 0) null else newMask))
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                letter,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
