@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,9 +13,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -25,6 +28,8 @@ private val LINE_COLORS = listOf(
     Color(0xFF9C71FF), Color(0xFF03DAC6), Color(0xFFFF8A65), Color(0xFF4CAF50),
     Color(0xFF2196F3), Color(0xFFE91E63), Color(0xFFFFEB3B), Color(0xFF9C27B0)
 )
+
+private val LABEL_COLOR = Color(0xFFBBBBBB)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,7 +53,6 @@ fun GraphsScreen(viewModel: GraphsViewModel) {
             contentPadding = PaddingValues(bottom = 80.dp, top = 12.dp)
         ) {
             item {
-                // Routine selector
                 var expanded by remember { mutableStateOf(false) }
                 val selectedName = state.allRoutines
                     .firstOrNull { it.id == state.selectedRoutineId }?.name
@@ -104,7 +108,6 @@ fun GraphsScreen(viewModel: GraphsViewModel) {
                 }
             } else {
                 item {
-                    // Chart title
                     Text(
                         "Time per item (seconds) — lower is faster",
                         style = MaterialTheme.typography.labelMedium,
@@ -113,6 +116,7 @@ fun GraphsScreen(viewModel: GraphsViewModel) {
                 }
 
                 item {
+                    val textMeasurer = rememberTextMeasurer()
                     val itemIds = state.sessionPoints.map { it.routineItemId }.distinct()
                     val dates = state.sessionPoints.map { it.dateEpochDay }.distinct().sorted()
                     val dataByItem = itemIds.associateWith { itemId ->
@@ -121,84 +125,85 @@ fun GraphsScreen(viewModel: GraphsViewModel) {
                     }
                     val maxY = state.sessionPoints.maxOf { it.avgSeconds }.coerceAtLeast(10f)
                     val dateFmt = DateTimeFormatter.ofPattern("M/d")
+                    val labelStyle = TextStyle(color = LABEL_COLOR, fontSize = 9.sp)
 
                     Card(
                         modifier = Modifier.fillMaxWidth().height(260.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-                            val w = constraints.maxWidth.toFloat()
-                            val h = constraints.maxHeight.toFloat()
+                        Canvas(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                            val w = size.width
+                            val h = size.height
                             val leftPad = 56f
-                            val bottomPad = 40f
+                            val bottomPad = 36f
                             val chartW = (w - leftPad - 8f).coerceAtLeast(1f)
                             val chartH = (h - bottomPad - 8f).coerceAtLeast(1f)
+                            val gridCount = 4
 
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val gridCount = 4
-                                val yLabelPaint = android.graphics.Paint().apply {
-                                    color = android.graphics.Color.LTGRAY
-                                    textSize = 22f
-                                    textAlign = android.graphics.Paint.Align.RIGHT
-                                }
-                                val xLabelPaint = android.graphics.Paint().apply {
-                                    color = android.graphics.Color.LTGRAY
-                                    textSize = 20f
-                                    textAlign = android.graphics.Paint.Align.CENTER
-                                }
-                                // Grid lines + Y axis labels
-                                for (i in 0..gridCount) {
-                                    val y = 8f + chartH * (1f - i.toFloat() / gridCount)
-                                    drawLine(
-                                        color = Color.White.copy(alpha = 0.08f),
-                                        start = Offset(leftPad, y),
-                                        end = Offset(leftPad + chartW, y),
-                                        strokeWidth = 1f
+                            for (i in 0..gridCount) {
+                                val y = 8f + chartH * (1f - i.toFloat() / gridCount)
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.08f),
+                                    start = Offset(leftPad, y),
+                                    end = Offset(leftPad + chartW, y),
+                                    strokeWidth = 1f
+                                )
+                                val labelVal = (maxY * i / gridCount).toInt()
+                                val measured = textMeasurer.measure("${labelVal}s", labelStyle)
+                                drawText(
+                                    measured,
+                                    topLeft = Offset(
+                                        leftPad - measured.size.width - 4f,
+                                        y - measured.size.height / 2f
                                     )
-                                    val labelVal = (maxY * i / gridCount).toInt()
-                                    drawIntoCanvas { canvas ->
-                                        canvas.nativeCanvas.drawText("${labelVal}s", leftPad - 6f, y + 5f, yLabelPaint)
+                                )
+                            }
+
+                            val xStep = if (dates.size > 1) chartW / (dates.size - 1) else chartW / 2
+                            dates.forEachIndexed { di, dateEpoch ->
+                                val x = leftPad + di * xStep
+                                if (di % maxOf(1, dates.size / 5) == 0 || di == dates.size - 1) {
+                                    val label = LocalDate.ofEpochDay(dateEpoch).format(dateFmt)
+                                    val measured = textMeasurer.measure(label, labelStyle)
+                                    drawText(
+                                        measured,
+                                        topLeft = Offset(
+                                            x - measured.size.width / 2f,
+                                            h - bottomPad + 4f
+                                        )
+                                    )
+                                }
+                            }
+
+                            itemIds.forEachIndexed { colorIdx, itemId ->
+                                val color = LINE_COLORS[colorIdx % LINE_COLORS.size]
+                                val itemData = dataByItem[itemId] ?: return@forEachIndexed
+                                val points = dates.mapNotNull { dateEpoch ->
+                                    itemData[dateEpoch]?.let { sec ->
+                                        val x = leftPad + dates.indexOf(dateEpoch) * xStep
+                                        val y = 8f + chartH * (1f - sec / maxY)
+                                        Offset(x, y)
                                     }
                                 }
-
-                                val xStep = if (dates.size > 1) chartW / (dates.size - 1) else chartW / 2
-                                dates.forEachIndexed { di, dateEpoch ->
-                                    val x = leftPad + di * xStep
-                                    if (di % maxOf(1, dates.size / 5) == 0 || di == dates.size - 1) {
-                                        drawIntoCanvas { canvas ->
-                                            canvas.nativeCanvas.drawText(
-                                                LocalDate.ofEpochDay(dateEpoch).format(dateFmt),
-                                                x, h - 4f, xLabelPaint
-                                            )
-                                        }
+                                if (points.size >= 2) {
+                                    for (i in 0 until points.size - 1) {
+                                        drawLine(
+                                            color = color,
+                                            start = points[i],
+                                            end = points[i + 1],
+                                            strokeWidth = 3f,
+                                            cap = StrokeCap.Round
+                                        )
                                     }
                                 }
-
-                                itemIds.forEachIndexed { colorIdx, itemId ->
-                                    val color = LINE_COLORS[colorIdx % LINE_COLORS.size]
-                                    val itemData = dataByItem[itemId] ?: return@forEachIndexed
-                                    val points = dates.mapNotNull { dateEpoch ->
-                                        itemData[dateEpoch]?.let { sec ->
-                                            val x = leftPad + dates.indexOf(dateEpoch) * xStep
-                                            val y = 8f + chartH * (1f - sec / maxY)
-                                            Offset(x, y)
-                                        }
-                                    }
-                                    if (points.size >= 2) {
-                                        for (i in 0 until points.size - 1) {
-                                            drawLine(
-                                                color = color,
-                                                start = points[i],
-                                                end = points[i + 1],
-                                                strokeWidth = 3f,
-                                                cap = StrokeCap.Round
-                                            )
-                                        }
-                                    }
-                                    points.forEach { pt ->
-                                        drawCircle(color = color, radius = 5f, center = pt)
-                                        drawCircle(color = Color.Black.copy(alpha = 0.3f), radius = 5f, center = pt, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
-                                    }
+                                points.forEach { pt ->
+                                    drawCircle(color = color, radius = 5f, center = pt)
+                                    drawCircle(
+                                        color = Color.Black.copy(alpha = 0.3f),
+                                        radius = 5f,
+                                        center = pt,
+                                        style = Stroke(1f)
+                                    )
                                 }
                             }
                         }
@@ -206,8 +211,11 @@ fun GraphsScreen(viewModel: GraphsViewModel) {
                 }
 
                 item {
-                    // Legend
-                    Text("Legend", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "Legend",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Spacer(Modifier.height(6.dp))
                     val itemIds = state.sessionPoints.map { it.routineItemId }.distinct()
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
