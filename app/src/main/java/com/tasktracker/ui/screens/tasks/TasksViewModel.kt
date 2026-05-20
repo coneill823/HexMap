@@ -21,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDate
 import java.util.UUID
 
@@ -197,8 +198,14 @@ class TasksViewModel(
     }
 
     fun startRoutineById(routineId: Long) {
-        val routine = uiState.value.routines.firstOrNull { it.routine.id == routineId } ?: return
-        startSession(routine)
+        viewModelScope.launch {
+            withTimeoutOrNull(5000L) {
+                val routine = uiState
+                    .mapNotNull { state -> state.routines.firstOrNull { it.routine.id == routineId } }
+                    .first()
+                startSession(routine)
+            }
+        }
     }
 
     fun showEditRoutineItemDialog(item: RoutineItem) { _editingRoutineItem.value = item }

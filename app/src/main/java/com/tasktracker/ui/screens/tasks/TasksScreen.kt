@@ -468,13 +468,25 @@ private fun RoutineManagementCard(
     val density = LocalDensity.current
     val itemHeightPx = with(density) { 52.dp.toPx() }
 
+    val routineAccentColor = try {
+        Color(android.graphics.Color.parseColor(routine.routine.colorHex))
+    } catch (_: Exception) {
+        Color(0xFF9C71FF)
+    }
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(routineAccentColor)
+            ) {}
+        Column(modifier = Modifier.padding(12.dp).weight(1f)) {
             // ---- Header ----
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -674,6 +686,7 @@ private fun RoutineManagementCard(
                 }
             }
         }
+        } // close IntrinsicSize.Min Row
     }
 }
 
@@ -781,6 +794,11 @@ private fun TaskListItem(
     onPlay: (TaskWithTags) -> Unit = {}
 ) {
     val task = taskWithTags.task
+    val taskAccentColor = try {
+        Color(android.graphics.Color.parseColor(task.colorHex))
+    } catch (_: Exception) {
+        Color(0xFF9C71FF)
+    }
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (task.isCompleted)
@@ -790,8 +808,15 @@ private fun TaskListItem(
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(taskAccentColor.copy(alpha = if (task.isCompleted) 0.4f else 1f))
+            ) {}
+            Row(
+            modifier = Modifier.padding(12.dp).weight(1f),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
@@ -931,6 +956,7 @@ private fun TaskListItem(
                 }
             }
         }
+        } // close IntrinsicSize.Min Row
     }
 }
 
