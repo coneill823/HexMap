@@ -1,13 +1,16 @@
 package com.tasktracker.ui.screens.calendar
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -15,34 +18,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tasktracker.data.database.entities.RecurrenceRule
 import com.tasktracker.data.database.entities.RoutineItem
 import com.tasktracker.data.models.RoutineWithProgress
 import com.tasktracker.data.models.TaskWithTags
 import com.tasktracker.ui.components.AddRoutineDialog
-import com.tasktracker.ui.components.AddTaskDialog
 import com.tasktracker.ui.components.EditRoutineItemDialog
 import com.tasktracker.ui.components.SessionOverlayDialog
 import com.tasktracker.ui.components.formatTime
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 import kotlinx.coroutines.launch
-
-// ---------------------------------------------------------------------------
-// Data model for the Today timeline
-// ---------------------------------------------------------------------------
-
-private sealed class TimelineEntry {
-    data class TaskEntry(val taskWithTags: TaskWithTags) : TimelineEntry()
-    data class RoutineEntry(val routineWithProgress: RoutineWithProgress) : TimelineEntry()
-    object CurrentTimeDivider : TimelineEntry()
-    object UnscheduledHeader : TimelineEntry()
-}
 
 // ---------------------------------------------------------------------------
 // CalendarScreen
@@ -62,11 +59,6 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
                     containerColor = MaterialTheme.colorScheme.surface
                 )
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { viewModel.showAddTaskDialog() }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Task")
-            }
         }
     ) { padding ->
         Column(
@@ -105,16 +97,6 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
     }
 
     // Dialogs
-    if (state.showAddTaskDialog) {
-        AddTaskDialog(
-            tags = state.availableTags,
-            selectedDate = state.selectedDate,
-            onDismiss = viewModel::dismissDialogs,
-            onConfirm = viewModel::addTask,
-            onCreateTag = viewModel::createTag
-        )
-    }
-
     if (state.showAddRoutineDialog) {
         AddRoutineDialog(
             onDismiss = viewModel::dismissDialogs,
@@ -141,8 +123,13 @@ fun CalendarScreen(viewModel: CalendarViewModel, onNavigateToRoutine: (Long) -> 
 }
 
 // ---------------------------------------------------------------------------
-// Today Tab — scrollable timeline
+// Today Tab — Canvas-based timeline 6am to midnight
 // ---------------------------------------------------------------------------
+
+private val HOUR_HEIGHT = 64.dp
+private const val START_HOUR = 6
+private const val END_HOUR = 24
+private const val TOTAL_HOURS = END_HOUR - START_HOUR // 18
 
 @Composable
 private fun TodayTab(
@@ -153,457 +140,354 @@ private fun TodayTab(
     val now = LocalTime.now()
     val currentMinutes = now.hour * 60 + now.minute
 
-    // Build timeline entries
-    val entries = remember(state.tasks, state.routines, currentMinutes) {
-        buildTimelineEntries(state.tasks, state.routines, currentMinutes)
-    }
+    val unscheduledTasks = remember(state.tasks) { state.tasks.filter { it.task.timeMinutes == null } }
+    val scheduledTasks = remember(state.tasks) { state.tasks.filter { it.task.timeMinutes != null } }
+    val unscheduledRoutines = remember(state.routines) { state.routines.filter { it.routine.timeMinutes == null } }
+    val scheduledRoutines = remember(state.routines) { state.routines.filter { it.routine.timeMinutes != null } }
 
-    val listState = rememberLazyListState()
+    val hasUnscheduled = unscheduledTasks.isNotEmpty() || unscheduledRoutines.isNotEmpty()
+
+    val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Scroll to current time position when tab loads
+    // Scroll to current time on initial load
     LaunchedEffect(Unit) {
-        val dividerIndex = entries.indexOfFirst { it is TimelineEntry.CurrentTimeDivider }
-        if (dividerIndex >= 0) {
+        val currentHourOffset = (currentMinutes - START_HOUR * 60).coerceAtLeast(0)
+        val totalMinutes = TOTAL_HOURS * 60
+        if (currentHourOffset in 0..totalMinutes) {
+            // We need density to compute px; approximate with 64dp per hour at 2dp/px typical
+            // We'll scroll after composition settles; use a short pass-through
             coroutineScope.launch {
-                listState.animateScrollToItem(index = dividerIndex.coerceAtLeast(0))
+                // Compute scroll target: each hour is HOUR_HEIGHT dp
+                // We can't access density here directly, so we use the actual scrollable height
+                // The scroll will animate after the content is laid out
+                val fractionOfTimeline = currentHourOffset.toFloat() / (TOTAL_HOURS * 60)
+                val estimatedMaxScroll = scrollState.maxValue
+                if (estimatedMaxScroll > 0) {
+                    scrollState.animateScrollTo((fractionOfTimeline * estimatedMaxScroll).toInt())
+                }
             }
         }
     }
 
-    val today = LocalDate.now()
-    val isToday = state.selectedDate == today
+    // Second effect that waits for scroll to be ready
+    LaunchedEffect(scrollState.maxValue) {
+        if (scrollState.maxValue > 0) {
+            val currentHourOffset = (currentMinutes - START_HOUR * 60).coerceAtLeast(0)
+            val fractionOfTimeline = currentHourOffset.toFloat() / (TOTAL_HOURS * 60)
+            scrollState.animateScrollTo((fractionOfTimeline * scrollState.maxValue).toInt())
+        }
+    }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 80.dp)
-    ) {
-        if (!isToday) {
-            item {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Unscheduled section
+        if (hasUnscheduled) {
+            Text(
+                text = "Unscheduled",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+            unscheduledTasks.forEach { twt ->
+                CompactTaskCard(twt)
+            }
+            unscheduledRoutines.forEach { rwp ->
+                CompactRoutineCard(rwp, onStartSession = { onStartSession(rwp) })
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        }
+
+        // Timeline
+        val hourHeightDp = HOUR_HEIGHT
+        val totalHeightDp = hourHeightDp * TOTAL_HOURS
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(scrollState)
+        ) {
+            val surfaceVariantColor = MaterialTheme.colorScheme.onSurface
+            val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+            // 1. Background canvas — hour and half-hour lines
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(totalHeightDp)
+            ) {
+                val leftPad = 56.dp.toPx()
+                val hourPx = hourHeightDp.toPx()
+
+                for (hour in 0..TOTAL_HOURS) {
+                    val y = hourPx * hour
+                    // Hour line
+                    drawLine(
+                        color = surfaceVariantColor.copy(alpha = 0.12f),
+                        start = Offset(leftPad, y),
+                        end = Offset(size.width, y),
+                        strokeWidth = 1f
+                    )
+                    // Half-hour line
+                    if (hour < TOTAL_HOURS) {
+                        val yHalf = y + hourPx / 2f
+                        drawLine(
+                            color = surfaceVariantColor.copy(alpha = 0.05f),
+                            start = Offset(leftPad, yHalf),
+                            end = Offset(size.width, yHalf),
+                            strokeWidth = 1f
+                        )
+                    }
+                }
+            }
+
+            // 2. Time labels column (left side)
+            Column(modifier = Modifier.width(52.dp)) {
+                for (hour in 0..TOTAL_HOURS) {
+                    Box(
+                        modifier = Modifier.height(hourHeightDp),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
+                        val h = START_HOUR + hour
+                        val label = when {
+                            h == 0 -> "12am"
+                            h < 12 -> "${h}am"
+                            h == 12 -> "12pm"
+                            h == 24 -> "12am"
+                            else -> "${h - 12}pm"
+                        }
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = onSurfaceVariantColor.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(end = 6.dp, top = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            // 3. Scheduled tasks — absolutely positioned
+            scheduledTasks.forEach { twt ->
+                val timeMin = twt.task.timeMinutes ?: return@forEach
+                if (timeMin < START_HOUR * 60 || timeMin >= END_HOUR * 60) return@forEach
+                val yOffsetDp = ((timeMin - START_HOUR * 60) / 60f) * hourHeightDp
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .offset(y = yOffsetDp)
+                        .padding(start = 58.dp, end = 8.dp)
                 ) {
-                    Text(
-                        "Showing today's tasks. Select today in Calendar tab to see your schedule.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    CompactTaskCard(twt)
+                }
+            }
+
+            // 4. Scheduled routines — absolutely positioned
+            scheduledRoutines.forEach { rwp ->
+                val timeMin = rwp.routine.timeMinutes ?: return@forEach
+                if (timeMin < START_HOUR * 60 || timeMin >= END_HOUR * 60) return@forEach
+                val yOffsetDp = ((timeMin - START_HOUR * 60) / 60f) * hourHeightDp
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset(y = yOffsetDp)
+                        .padding(start = 58.dp, end = 8.dp)
+                ) {
+                    CompactRoutineCard(rwp, onStartSession = { onStartSession(rwp) })
+                }
+            }
+
+            // 5. Current time indicator (red line)
+            if (currentMinutes >= START_HOUR * 60 && currentMinutes < END_HOUR * 60) {
+                val yOffsetDp = ((currentMinutes - START_HOUR * 60) / 60f) * hourHeightDp
+                val errorColor = MaterialTheme.colorScheme.error
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .offset(y = yOffsetDp)
+                ) {
+                    drawLine(
+                        color = errorColor,
+                        start = Offset(52.dp.toPx(), 0f),
+                        end = Offset(size.width, 0f),
+                        strokeWidth = 2f
+                    )
+                    drawCircle(
+                        color = errorColor,
+                        radius = 5.dp.toPx(),
+                        center = Offset(52.dp.toPx(), 0f)
                     )
                 }
             }
         }
 
-        items(entries, key = { entry ->
-            when (entry) {
-                is TimelineEntry.TaskEntry -> "task_${entry.taskWithTags.task.id}"
-                is TimelineEntry.RoutineEntry -> "routine_${entry.routineWithProgress.routine.id}"
-                is TimelineEntry.CurrentTimeDivider -> "current_time_divider"
-                is TimelineEntry.UnscheduledHeader -> "unscheduled_header"
-            }
-        }) { entry ->
-            when (entry) {
-                is TimelineEntry.UnscheduledHeader -> {
-                    UnscheduledSectionHeader()
-                }
-                is TimelineEntry.CurrentTimeDivider -> {
-                    CurrentTimeDivider(currentMinutes = currentMinutes)
-                }
-                is TimelineEntry.TaskEntry -> {
-                    TimelineTaskRow(
-                        taskWithTags = entry.taskWithTags
-                    )
-                }
-                is TimelineEntry.RoutineEntry -> {
-                    TimelineRoutineCard(
-                        routineWithProgress = entry.routineWithProgress,
-                        onStartSession = { onStartSession(entry.routineWithProgress) },
-                        onNavigateToRoutine = { onNavigateToRoutine(entry.routineWithProgress.routine.id) }
-                    )
-                }
-            }
-        }
-
-        if (entries.none { it is TimelineEntry.TaskEntry || it is TimelineEntry.RoutineEntry }) {
-            item {
-                EmptyTodayContent()
-            }
+        // Empty state when no tasks/routines at all
+        if (state.tasks.isEmpty() && state.routines.isEmpty()) {
+            EmptyTodayContent()
         }
     }
 }
 
-private fun buildTimelineEntries(
-    tasks: List<TaskWithTags>,
-    routines: List<RoutineWithProgress>,
-    currentMinutes: Int
-): List<TimelineEntry> {
-    val result = mutableListOf<TimelineEntry>()
-
-    // Separate scheduled vs unscheduled
-    val unscheduledTasks = tasks.filter { it.task.timeMinutes == null }
-    val scheduledTasks = tasks.filter { it.task.timeMinutes != null }
-    val unscheduledRoutines = routines.filter { it.routine.timeMinutes == null }
-    val scheduledRoutines = routines.filter { it.routine.timeMinutes != null }
-
-    // Unscheduled section
-    val hasUnscheduled = unscheduledTasks.isNotEmpty() || unscheduledRoutines.isNotEmpty()
-    if (hasUnscheduled) {
-        result.add(TimelineEntry.UnscheduledHeader)
-        unscheduledTasks.forEach { result.add(TimelineEntry.TaskEntry(it)) }
-        unscheduledRoutines.forEach { result.add(TimelineEntry.RoutineEntry(it)) }
-    }
-
-    // Merge scheduled items sorted by time
-    data class ScheduledItem(val timeMinutes: Int, val entry: TimelineEntry)
-
-    val scheduledItems = mutableListOf<ScheduledItem>()
-    scheduledTasks.forEach { twt ->
-        scheduledItems.add(ScheduledItem(twt.task.timeMinutes!!, TimelineEntry.TaskEntry(twt)))
-    }
-    scheduledRoutines.forEach { rwp ->
-        scheduledItems.add(ScheduledItem(rwp.routine.timeMinutes!!, TimelineEntry.RoutineEntry(rwp)))
-    }
-    scheduledItems.sortBy { it.timeMinutes }
-
-    // Inject current-time divider at the right position
-    var dividerInserted = false
-    for (item in scheduledItems) {
-        if (!dividerInserted && item.timeMinutes > currentMinutes) {
-            result.add(TimelineEntry.CurrentTimeDivider)
-            dividerInserted = true
-        }
-        result.add(item.entry)
-    }
-    // If all scheduled items are before current time (or none), append divider at end
-    if (!dividerInserted) {
-        result.add(TimelineEntry.CurrentTimeDivider)
-    }
-
-    return result
-}
+// ---------------------------------------------------------------------------
+// Compact cards for the Today tab
+// ---------------------------------------------------------------------------
 
 @Composable
-private fun UnscheduledSectionHeader() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Icon(
-            Icons.Default.Schedule,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            "Unscheduled",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        HorizontalDivider(modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun CurrentTimeDivider(currentMinutes: Int) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .padding(start = 12.dp)
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.error)
-        )
-        HorizontalDivider(
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-            color = MaterialTheme.colorScheme.error,
-            thickness = 1.5.dp
-        )
-        Text(
-            text = formatTime(currentMinutes),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(end = 12.dp)
-        )
-    }
-}
-
-@Composable
-private fun TimelineTaskRow(
-    taskWithTags: TaskWithTags
-) {
+private fun CompactTaskCard(taskWithTags: TaskWithTags) {
     val task = taskWithTags.task
-    Row(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (task.isCompleted)
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        )
     ) {
-        // Time on the left
-        Box(modifier = Modifier.width(56.dp), contentAlignment = Alignment.CenterEnd) {
-            Text(
-                text = task.timeMinutes?.let { formatTime(it) } ?: "",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Card(
-            modifier = Modifier.weight(1f),
-            colors = CardDefaults.cardColors(
-                containerColor = if (task.isCompleted)
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                else
-                    MaterialTheme.colorScheme.surfaceVariant
-            )
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text(
-                        task.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                        color = if (task.isCompleted)
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        else
-                            MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (task.description.isNotBlank()) {
-                        Text(
-                            task.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (taskWithTags.tags.isNotEmpty()) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(top = 2.dp)
-                        ) {
-                            taskWithTags.tags.forEach { tag ->
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(
-                                            Color(android.graphics.Color.parseColor(tag.colorHex)).copy(alpha = 0.25f)
-                                        )
-                                        .padding(horizontal = 5.dp, vertical = 1.dp)
-                                ) {
-                                    Text(
-                                        tag.name,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(android.graphics.Color.parseColor(tag.colorHex))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    task.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                    color = if (task.isCompleted)
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    else
+                        MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (taskWithTags.tags.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        taskWithTags.tags.forEach { tag ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(
+                                        Color(android.graphics.Color.parseColor(tag.colorHex)).copy(alpha = 0.25f)
                                     )
-                                }
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    tag.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(android.graphics.Color.parseColor(tag.colorHex))
+                                )
                             }
                         }
                     }
                 }
-                if (task.timeMinutes != null) {
+            }
+            if (task.timeMinutes != null) {
+                Text(
+                    formatTime(task.timeMinutes),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactRoutineCard(
+    routineWithProgress: RoutineWithProgress,
+    onStartSession: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val routine = routineWithProgress.routine
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .animateContentSize(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Repeat,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    routine.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (routineWithProgress.totalCount > 0) {
                     Text(
-                        formatTime(task.timeMinutes),
+                        "${routineWithProgress.completedCount}/${routineWithProgress.totalCount}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                if (routine.timeMinutes != null) {
+                    Text(
+                        formatTime(routine.timeMinutes),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(end = 4.dp)
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TimelineRoutineCard(
-    routineWithProgress: RoutineWithProgress,
-    onStartSession: () -> Unit,
-    onNavigateToRoutine: () -> Unit
-) {
-    var expanded by remember { mutableStateOf(true) }
-    val routine = routineWithProgress.routine
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        // Time on the left
-        Box(
-            modifier = Modifier
-                .width(56.dp)
-                .padding(top = 14.dp),
-            contentAlignment = Alignment.CenterEnd
-        ) {
-            Text(
-                text = routine.timeMinutes?.let { formatTime(it) } ?: "",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Card(
-            modifier = Modifier
-                .weight(1f)
-                .animateContentSize(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                IconButton(
+                    onClick = onStartSession,
+                    modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
-                        Icons.Default.Repeat,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (routineWithProgress.isFullyCompleted)
-                            MaterialTheme.colorScheme.primary
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Start Session",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(Modifier.width(6.dp))
+                }
+                IconButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            if (expanded && routineWithProgress.items.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                routineWithProgress.items.forEach { itemWithCompletion ->
                     Text(
-                        routine.name,
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.weight(1f)
+                        text = itemWithCompletion.item.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 20.dp, top = 2.dp, bottom = 2.dp)
                     )
-                    if (routineWithProgress.totalCount > 0) {
-                        Text(
-                            "${routineWithProgress.completedCount}/${routineWithProgress.totalCount}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    // Play button to start session
-                    IconButton(
-                        onClick = onStartSession,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "Start Session",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    // Edit button → navigate to Routines tab
-                    IconButton(
-                        onClick = onNavigateToRoutine,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = "Edit routine",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
-                    }
-                    IconButton(
-                        onClick = { expanded = !expanded },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (expanded) "Collapse" else "Expand",
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                if (routineWithProgress.totalCount > 0) {
-                    LinearProgressIndicator(
-                        progress = { routineWithProgress.progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .padding(top = 2.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.outline
-                    )
-                }
-
-                if (expanded) {
-                    Spacer(Modifier.height(6.dp))
-                    if (routineWithProgress.items.isEmpty()) {
-                        Text(
-                            "No tasks in this routine",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        routineWithProgress.items.forEach { itemWithCompletion ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 1.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    itemWithCompletion.item.title,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.weight(1f),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                if (itemWithCompletion.item.timeMinutes != null) {
-                                    Text(
-                                        formatTime(itemWithCompletion.item.timeMinutes),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun EmptyTodayContent() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Icon(
-            Icons.Default.WbSunny,
-            contentDescription = null,
-            modifier = Modifier.size(56.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-        )
-        Text(
-            "Nothing scheduled for today",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
 // ---------------------------------------------------------------------------
-// Calendar Tab — month calendar + day list (existing behaviour)
+// Calendar Tab — month calendar + colored dots + sorted day list
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -611,70 +495,362 @@ private fun CalendarTab(
     state: CalendarUiState,
     viewModel: CalendarViewModel
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 80.dp)
-    ) {
-        item {
-            // Day navigation bar
-            Row(
+    Column(modifier = Modifier.fillMaxSize()) {
+        MonthCalendar(
+            currentMonth = state.currentMonth,
+            selectedDate = state.selectedDate,
+            allRoutines = state.allRoutines,
+            routineRules = state.routineRules,
+            onDaySelected = viewModel::selectDate,
+            onPrevMonth = { viewModel.navigateMonth(-1) },
+            onNextMonth = { viewModel.navigateMonth(1) }
+        )
+
+        HorizontalDivider()
+
+        // Selected day header
+        Text(
+            text = state.selectedDate.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        // Day content — tasks + routines sorted by timeMinutes (null last)
+        val sortedTasks = remember(state.tasks) {
+            state.tasks.sortedWith(compareBy(nullsLast()) { it.task.timeMinutes })
+        }
+        val sortedRoutines = remember(state.routines) {
+            state.routines.sortedWith(compareBy(nullsLast()) { it.routine.timeMinutes })
+        }
+
+        if (sortedTasks.isEmpty() && sortedRoutines.isEmpty()) {
+            EmptyDayContent()
+        } else {
+            LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .fillMaxSize()
+                    .weight(1f),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                if (sortedTasks.isNotEmpty()) {
+                    item { SectionHeader(title = "Tasks", icon = Icons.Default.CheckCircle) }
+                    items(sortedTasks, key = { "task_${it.task.id}" }) { taskWithTags ->
+                        TaskCard(
+                            taskWithTags = taskWithTags,
+                            onToggleComplete = { viewModel.toggleTaskComplete(taskWithTags) },
+                            onDelete = { viewModel.deleteTask(taskWithTags) }
+                        )
+                    }
+                }
+
+                if (sortedRoutines.isNotEmpty()) {
+                    item { SectionHeader(title = "Routines", icon = Icons.Default.Repeat) }
+                    items(sortedRoutines, key = { "routine_${it.routine.id}" }) { routineWithProgress ->
+                        CalendarRoutineCard(
+                            routineWithProgress = routineWithProgress,
+                            onStartSession = { viewModel.startSession(routineWithProgress) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Month Calendar composable
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun MonthCalendar(
+    currentMonth: YearMonth,
+    selectedDate: LocalDate,
+    allRoutines: List<RoutineWithProgress>,
+    routineRules: Map<Long, RecurrenceRule>,
+    onDaySelected: (LocalDate) -> Unit,
+    onPrevMonth: () -> Unit,
+    onNextMonth: () -> Unit
+) {
+    val today = LocalDate.now()
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Month header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onPrevMonth) {
+                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month")
+            }
+            Text(
+                text = currentMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy")),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            IconButton(onClick = onNextMonth) {
+                Icon(Icons.Default.ChevronRight, contentDescription = "Next month")
+            }
+        }
+
+        // Day of week headers
+        Row(modifier = Modifier.fillMaxWidth()) {
+            val daysOfWeek = listOf(
+                DayOfWeek.SUNDAY, DayOfWeek.MONDAY, DayOfWeek.TUESDAY,
+                DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY
+            )
+            daysOfWeek.forEach { dow ->
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = dow.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // Build calendar grid
+        val firstDayOfMonth = currentMonth.atDay(1)
+        // Sunday = 0, Monday = 1, ... Saturday = 6 in US calendar
+        val startDayOfWeek = firstDayOfMonth.dayOfWeek.value % 7 // Sunday=0
+
+        val daysInMonth = currentMonth.lengthOfMonth()
+        val totalCells = startDayOfWeek + daysInMonth
+        val rows = (totalCells + 6) / 7
+
+        for (row in 0 until rows) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                for (col in 0..6) {
+                    val cellIndex = row * 7 + col
+                    val dayNumber = cellIndex - startDayOfWeek + 1
+
+                    if (dayNumber < 1 || dayNumber > daysInMonth) {
+                        Box(modifier = Modifier.weight(1f))
+                    } else {
+                        val date = currentMonth.atDay(dayNumber)
+                        val isToday = date == today
+                        val isSelected = date == selectedDate
+
+                        // Compute dots: routines that occur on this date
+                        val routinesForDay = allRoutines.filter { rwp ->
+                            val rule = routineRules[rwp.routine.id]
+                            rule?.occursOn(date) ?: true
+                        }
+
+                        CalendarDayCell(
+                            day = dayNumber,
+                            isToday = isToday,
+                            isSelected = isSelected,
+                            routinesForDay = routinesForDay,
+                            onClick = { onDaySelected(date) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarDayCell(
+    day: Int,
+    isToday: Boolean,
+    isSelected: Boolean,
+    routinesForDay: List<RoutineWithProgress>,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val onPrimaryColor = MaterialTheme.colorScheme.onPrimary
+
+    Column(
+        modifier = modifier
+            .defaultMinSize(minHeight = 56.dp)
+            .clickable(onClick = onClick)
+            .padding(2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier.size(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isToday) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(primaryColor)
+                )
+            } else if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(surfaceVariantColor)
+                )
+            }
+            Text(
+                text = day.toString(),
+                style = MaterialTheme.typography.bodySmall,
+                color = when {
+                    isToday -> onPrimaryColor
+                    isSelected -> onSurfaceColor
+                    else -> onSurfaceColor
+                }
+            )
+        }
+
+        // Routine color dots
+        if (routinesForDay.isNotEmpty()) {
+            val maxDots = 5
+            val dotsToShow = routinesForDay.take(maxDots)
+            val remaining = routinesForDay.size - dotsToShow.size
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)
+            ) {
+                dotsToShow.forEach { rwp ->
+                    val dotColor = try {
+                        Color(android.graphics.Color.parseColor(rwp.routine.colorHex))
+                    } catch (e: Exception) {
+                        Color(0xFF9C71FF.toInt())
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(dotColor)
+                    )
+                }
+                if (remaining > 0) {
+                    Text(
+                        text = "+$remaining",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = MaterialTheme.typography.labelSmall.fontSize
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Calendar tab routine card — collapsed by default, read-only items
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun CalendarRoutineCard(
+    routineWithProgress: RoutineWithProgress,
+    onStartSession: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .animateContentSize(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { viewModel.selectDate(state.selectedDate.minusDays(1)) }) {
-                    Icon(Icons.Default.ChevronLeft, contentDescription = "Previous day")
-                }
+                Icon(
+                    Icons.Default.Repeat,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (routineWithProgress.isFullyCompleted)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = state.selectedDate.format(DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy")),
+                    routineWithProgress.routine.name,
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    modifier = Modifier.weight(1f)
                 )
-                IconButton(onClick = { viewModel.selectDate(state.selectedDate.plusDays(1)) }) {
-                    Icon(Icons.Default.ChevronRight, contentDescription = "Next day")
+                if (routineWithProgress.totalCount > 0) {
+                    Text(
+                        "${routineWithProgress.completedCount}/${routineWithProgress.totalCount}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                if (routineWithProgress.routine.timeMinutes != null) {
+                    Text(
+                        formatTime(routineWithProgress.routine.timeMinutes),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+                IconButton(onClick = onStartSession, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Start Session",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
-        }
 
-        if (state.tasks.isNotEmpty()) {
-            item { SectionHeader(title = "Tasks", icon = Icons.Default.CheckCircle) }
-            items(state.tasks, key = { "task_${it.task.id}" }) { taskWithTags ->
-                TaskCard(
-                    taskWithTags = taskWithTags,
-                    onToggleComplete = { viewModel.toggleTaskComplete(taskWithTags) },
-                    onDelete = { viewModel.deleteTask(taskWithTags) }
+            if (routineWithProgress.totalCount > 0) {
+                LinearProgressIndicator(
+                    progress = { routineWithProgress.progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .padding(top = 2.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.outline
                 )
             }
-        }
 
-        if (state.routines.isNotEmpty()) {
-            item { SectionHeader(title = "Routines", icon = Icons.Default.Repeat) }
-            items(state.routines, key = { "routine_${it.routine.id}" }) { routineWithProgress ->
-                RoutineCard(
-                    routineWithProgress = routineWithProgress,
-                    onStartSession = { viewModel.startSession(routineWithProgress) },
-                    onToggleItem = { itemId, currentlyCompleted ->
-                        viewModel.toggleRoutineItemComplete(
-                            routineWithProgress.routine.id,
-                            itemId,
-                            state.selectedDate,
-                            currentlyCompleted
+            if (expanded) {
+                Spacer(Modifier.height(6.dp))
+                if (routineWithProgress.items.isEmpty()) {
+                    Text(
+                        "No tasks in this routine",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    routineWithProgress.items.forEach { itemWithCompletion ->
+                        Text(
+                            text = itemWithCompletion.item.title,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp, horizontal = 4.dp)
                         )
-                    },
-                    onDeleteItem = { item -> viewModel.deleteRoutineItem(item) },
-                    onDeleteRoutine = { viewModel.deleteRoutine(routineWithProgress.routine) },
-                    onEditItem = { item -> viewModel.showEditRoutineItemDialog(item) }
-                )
+                    }
+                }
             }
-        }
-
-        if (state.tasks.isEmpty() && state.routines.isEmpty()) {
-            item { EmptyDayContent(onAddTask = { viewModel.showAddTaskDialog() }) }
         }
     }
 }
@@ -727,7 +903,9 @@ private fun TaskCard(
                 onCheckedChange = { onToggleComplete() },
                 colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
             )
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
+            Column(modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp)) {
                 Text(
                     task.title,
                     style = MaterialTheme.typography.bodyMedium,
@@ -797,185 +975,30 @@ private fun TaskCard(
 }
 
 @Composable
-private fun RoutineCard(
-    routineWithProgress: RoutineWithProgress,
-    onStartSession: () -> Unit,
-    onToggleItem: (Long, Boolean) -> Unit,
-    onDeleteItem: (RoutineItem) -> Unit,
-    onDeleteRoutine: () -> Unit,
-    onEditItem: (RoutineItem) -> Unit = {}
-) {
-    var expanded by remember { mutableStateOf(true) }
-
-    Card(
+private fun EmptyTodayContent() {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-            .animateContentSize(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            .padding(48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Repeat,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = if (routineWithProgress.isFullyCompleted)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(routineWithProgress.routine.name, style = MaterialTheme.typography.titleSmall)
-                    }
-                    if (routineWithProgress.totalCount > 0) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(top = 4.dp)
-                        ) {
-                            LinearProgressIndicator(
-                                progress = { routineWithProgress.progress },
-                                modifier = Modifier
-                                    .width(80.dp)
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.outline
-                            )
-                            Text(
-                                "${routineWithProgress.completedCount}/${routineWithProgress.totalCount}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                IconButton(onClick = onStartSession, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "Start Session",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = onDeleteRoutine, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete routine",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            if (expanded) {
-                Spacer(Modifier.height(8.dp))
-                routineWithProgress.items.forEach { itemWithCompletion ->
-                    RoutineItemRow(
-                        title = itemWithCompletion.item.title,
-                        description = itemWithCompletion.item.description,
-                        timeMinutes = itemWithCompletion.item.timeMinutes,
-                        isCompleted = itemWithCompletion.isCompleted,
-                        onToggle = { onToggleItem(itemWithCompletion.item.id, itemWithCompletion.isCompleted) },
-                        onDelete = { onDeleteItem(itemWithCompletion.item) },
-                        onEdit = { onEditItem(itemWithCompletion.item) }
-                    )
-                }
-                if (routineWithProgress.items.isEmpty()) {
-                    Text(
-                        "No tasks in this routine yet",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RoutineItemRow(
-    title: String,
-    description: String,
-    timeMinutes: Int?,
-    isCompleted: Boolean,
-    onToggle: () -> Unit,
-    onDelete: () -> Unit,
-    onEdit: () -> Unit = {}
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Checkbox(
-            checked = isCompleted,
-            onCheckedChange = { onToggle() },
-            modifier = Modifier.size(36.dp),
-            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.secondary)
+        Icon(
+            Icons.Default.WbSunny,
+            contentDescription = null,
+            modifier = Modifier.size(56.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         )
-        Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodySmall,
-                textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                color = if (isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-            )
-            if (description.isNotBlank()) {
-                Text(
-                    description,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-        if (timeMinutes != null) {
-            Text(
-                formatTime(timeMinutes),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        IconButton(onClick = onEdit, modifier = Modifier.size(28.dp)) {
-            Icon(
-                Icons.Default.Edit,
-                contentDescription = "Edit",
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-            )
-        }
-        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-            Icon(
-                Icons.Default.Close,
-                contentDescription = "Remove",
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-            )
-        }
+        Text(
+            "Nothing scheduled for today",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
 @Composable
-private fun EmptyDayContent(onAddTask: () -> Unit) {
+private fun EmptyDayContent() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -994,8 +1017,5 @@ private fun EmptyDayContent(onAddTask: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        OutlinedButton(onClick = onAddTask) {
-            Text("Add Task")
-        }
     }
 }
