@@ -127,7 +127,7 @@ private fun RoutineListRow(routine: Routine) {
                 .width(4.dp)
                 .height(24.dp)
                 .background(ColorProvider(accent))
-        )
+        ) {}
         Spacer(GlanceModifier.width(10.dp))
         Text(
             routine.name,
